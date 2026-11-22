@@ -4,6 +4,7 @@
 //  LiveContainer plugin entry point
 //
 
+#import "LCOSPluginEntry.h"
 #import "LCOSCore.h"
 #import "LCOSXPC.h"
 #import "LCOSLogManager.h"

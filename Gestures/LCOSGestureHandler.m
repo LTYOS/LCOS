@@ -11,6 +11,8 @@
 
 static LCOSLauncherView *_sharedLauncher = nil;
 
+@implementation LCOSGestureHandler
+
 + (void)registerGestureRecognizers {
     // Get or create shared launcher instance
     if (!_sharedLauncher) {
@@ -109,7 +111,7 @@ static LCOSLauncherView *_sharedLauncher = nil;
 @end
 
 // Gesture recognizer delegate to allow simultaneous recognition
-@interface LCOSGestureHandler () <UIGestureRecognizerDelegate>
+@interface LCOSGestureHandler (GestureDelegate) <UIGestureRecognizerDelegate>
 @end
 
 @implementation LCOSGestureHandler (GestureDelegate)
