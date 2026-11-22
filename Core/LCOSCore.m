@@ -9,16 +9,6 @@
 #import "LCOSGestureHandler.h"
 #import "LCOSLogManager.h"
 
-@interface LCOSCore ()
-
-@property (nonatomic) NSUUID *identifier;
-@property (nonatomic) NSData *configurationData;
-@property (nonatomic) xpc_connection_t connection;
-@property (nonatomic) xpc_object_t configurationRequest;
-@property (nonatomic) BOOL finished;
-
-@end
-
 static NSMutableDictionary<NSUUID *, LCOSCore *> *launches;
 
 @implementation LCOSCore
@@ -33,12 +23,12 @@ static NSMutableDictionary<NSUUID *, LCOSCore *> *launches;
 + (void)resolvePendingRequests {
     BOOL isSpawning = NO;
     for (LCOSCore *process in launches.allValues) {
-        if (!process.pid) isSpawning = YES;
+        if (!process.identifier) isSpawning = YES;
     }
-    for (NSNumber *pid in LCOSXPC.pendingRequests.allKeys) {
+    for (NSNumber *pid in [[LCOSXPC new] pendingRequests].allKeys) {
         LCOSCore *process = [LCOSXPC processWithPID:pid.intValue];
-        xpc_connection_t peer = LCOSXPC.pendingConnections[pid];
-        xpc_object_t request = LCOSXPC.pendingRequests[pid];
+        xpc_connection_t peer = [[LCOSXPC new] pendingConnections][pid];
+        xpc_object_t request = [[LCOSXPC new] pendingRequests][pid];
         if (process && !process.connection) {
             process.connection = peer;
             process.configurationRequest = request;
@@ -46,8 +36,8 @@ static NSMutableDictionary<NSUUID *, LCOSCore *> *launches;
         } else {
             continue;
         }
-        [LCOSXPC.pendingConnections removeObjectForKey:pid];
-        [LCOSXPC.pendingRequests removeObjectForKey:pid];
+        [[[LCOSXPC new] pendingConnections] removeObjectForKey:pid];
+        [[[LCOSXPC new] pendingRequests] removeObjectForKey:pid];
     }
 }
 
@@ -61,7 +51,7 @@ static NSMutableDictionary<NSUUID *, LCOSCore *> *launches;
     launches[core.identifier] = core;
     
     // Load default LCOS configuration
-    [LCOSConfig loadDefaultConfig];
+    [[LCOSConfig new] loadDefaultConfig];
     
     return core;
 }
@@ -83,7 +73,7 @@ static NSMutableDictionary<NSUUID *, LCOSCore *> *launches;
 
 - (void)failWithError:(NSError *)error {
     [[LCOSLogManager sharedManager] logError:error];
-    [NSUserDefaults.lcUserDefaults setObject:[NSString stringWithFormat:@"LCOS encountered an error: %@", error.localizedDescription] forKey:@"error"];
+    [[NSUserDefaults standardUserDefaults] setObject:[NSString stringWithFormat:@"LCOS encountered an error: %@", error.localizedDescription] forKey:@"error"];
 }
 
 @end
