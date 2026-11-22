@@ -9,6 +9,10 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, copy) NSString *defaultAppGroupPath;
 @property (nonatomic, copy) NSDictionary *defaultConfigurationData;
 
++ (void)loadDefaultConfig;
++ (NSString *)appGroupID;
++ (NSDictionary *)defaultConfigurationData;
++ (void)writeDefaultConfigToPath:(NSString *)path;
 @end
 
 NS_ASSUME_NONNULL_END

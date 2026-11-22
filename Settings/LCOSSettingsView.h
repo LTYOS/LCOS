@@ -4,4 +4,6 @@
 
 @interface LCOSSettingsView : UIViewController
 
+- (void)logSettingsAccess;
+
 @end

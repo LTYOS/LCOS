@@ -23,7 +23,7 @@ static BOOL _isRunning = NO;
 }
 
 + (void)manageAppContainer {
-    [[LCOSAppContainer ensureLCOSDirectoryExists] retain];
+    [LCOSAppContainer ensureLCOSDirectoryExists];
 }
 
 @end
