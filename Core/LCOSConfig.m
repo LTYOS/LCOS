@@ -17,15 +17,15 @@
     static NSDictionary *config = nil;
     dispatch_once(&onceToken, ^{
         config = @{
-                   @"launcherStyle": @"ios26_27_grid",
-                   @"gestureEnter": @"three_finger_swipe_up",
-                   @"gestureExit": @"three_finger_swipe_down",
-                   @"gestureSettings": @"three_finger_long_press",
-                   @"dockPosition": @"bottom",
-                   @"gestureDirection": @"left",
-                   @"logLevel": @"info",
-                   @"autoGenerateLogs": @YES
-                   };
+                    @"launcherStyle": @"ios26_27_grid",
+                    @"gestureEnter": @"three_finger_swipe_up",
+                    @"gestureExit": @"three_finger_swipe_down",
+                    @"gestureSettings": @"three_finger_long_press",
+                    @"dockPosition": @"bottom",
+                    @"gestureDirection": @"left",
+                    @"logLevel": @"info",
+                    @"autoGenerateLogs": @YES
+                    };
     });
     return config;
 }
@@ -50,6 +50,27 @@
 + (void)writeDefaultConfigToPath:(NSString *)path {
     NSDictionary *defaultConfig = [LCOSConfig defaultConfigurationData];
     [defaultConfig writeToFile:path atomically:YES];
+}
+
+// New implementation for missing methods
++ (NSDictionary *)configuration {
+    // Return the default configuration as fallback
+    return [self defaultConfigurationData];
+}
+
++ (BOOL)saveConfiguration:(NSDictionary *)configuration {
+    // Save configuration to disk
+    NSString *path = [NSHomeDirectory() stringByAppendingPathComponent:@".LCOS/config.plist"];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    
+    if (![fm fileExistsAtPath:path]) {
+        // Create default config directory and file
+        NSString *configDir = [path stringByDeletingLastPathComponent];
+        [fm createDirectoryAtPath:configDir withIntermediateDirectories:YES attributes:nil error:nil];
+    }
+    
+    // Write configuration to disk
+    return [configuration writeToFile:path atomically:YES];
 }
 
 @end

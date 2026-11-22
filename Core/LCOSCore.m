@@ -9,8 +9,8 @@
 #import "LCOSLogManager.h"
 #import <mach/mach.h>
 
-static NSMutableDictionary<NSUUID *, LCOSCore *> *_launches;
-static NSMutableDictionary<NSNumber *, LCOSCore *> *_processesByPID;
+static NSMutableDictionary<NSUUID *, LCOSCore *> *_launches = nil;
+static NSMutableDictionary<NSNumber *, LCOSCore *> *_processesByPID = nil;
 
 @implementation LCOSCore
 
@@ -21,20 +21,20 @@ static NSMutableDictionary<NSNumber *, LCOSCore *> *_processesByPID;
 }
 
 + (nullable LCOSCore *)processWithPID:(pid_t)pid {
-    NSNumber *pidKey = @(pid);
-    LCOSCore *process = [_processesByPID objectForKey:pidKey];
-    if (!process) {
-        process = [_launches allValues].firstObject;
-        if (process && process.pid == pid) {
-            _processesByPID[pidKey] = process;
-        }
-    }
-    return process;
+    return [_processesByPID objectForKey:@(pid)];
 }
 
 + (void)resolvePendingRequests {
-    for (NSNumber *pidKey in [LCOSXPC pendingConnectionForPID:0 ? @[] : @[]]) {
-        // delegate to LCOSXPC singleton
+    for (NSNumber *pidKey in [_launches allKeys]) {
+        LCOSCore *process = [_launches objectForKey:pidKey];
+        if (!process) continue;
+        xpc_connection_t peer = [LCOSXPC pendingConnectionForPID:pidKey.intValue];
+        xpc_object_t request = [LCOSXPC pendingRequestForPID:pidKey.intValue];
+        if (process && !process.connection) {
+            process.connection = peer;
+            process.configurationRequest = request;
+            [process deliverConfiguration];
+        }
     }
 }
 
@@ -48,7 +48,8 @@ static NSMutableDictionary<NSNumber *, LCOSCore *> *_processesByPID;
     if (!_launches) _launches = [NSMutableDictionary new];
     if (!_processesByPID) _processesByPID = [NSMutableDictionary new];
     
-    _launches[identifier] = core;
+    _launches[core.identifier] = core;
+    _processesByPID[core.identifier] = core;
     
     [LCOSConfig loadDefaultConfig];
     
