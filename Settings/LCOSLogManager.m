@@ -4,6 +4,7 @@
 //
 
 #import "LCOSLogManager.h"
+#import "LCOSAppContainer.h"
 
 @implementation LCOSLogManager
 
@@ -18,7 +19,6 @@ static LCOSLogManager *_sharedInstance = nil;
 }
 
 - (void)setupLogDirectory {
-    NSString *appGroup = LCSharedUtils.appGroupID ?: @"LCOS";
     self.logDirectory = [NSHomeDirectory() stringByAppendingPathComponent:@".LCOS/logs"];
     NSFileManager *fm = [NSFileManager defaultManager];
     
@@ -56,7 +56,7 @@ static LCOSLogManager *_sharedInstance = nil;
     if (![NSFileManager.defaultManager fileExistsAtPath:self.logFilePath]) {
         handle = [NSFileHandle fileHandleForWritingAtPath:self.logFilePath];
         if (!handle) {
-            handle = [NSFileHandle fileHandleForCreatingFileAtPath:self.logFilePath];
+            handle = [[NSFileHandle alloc] initWithFileURL:[NSURL fileURLWithPath:self.logFilePath]];
         }
     } else {
         handle = [NSFileHandle fileHandleForWritingAtPath:self.logFilePath];

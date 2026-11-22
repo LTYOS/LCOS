@@ -2,6 +2,9 @@
 
 #import <UIKit/UIKit.h>
 
+@class LCOSGrid;
+@class LCOSDock;
+
 @interface LCOSLauncherView : UIViewController
 
 @property (nonatomic, strong) LCOSGrid *grid;

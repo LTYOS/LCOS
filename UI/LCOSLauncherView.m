@@ -5,6 +5,9 @@
 
 #import "LCOSLauncherView.h"
 #import "LCOSFolder.h"
+#import "LCOSGrid.h"
+#import "LCOSDock.h"
+#import "LCOSLogManager.h"
 
 @interface LCOSLauncherView ()
 
