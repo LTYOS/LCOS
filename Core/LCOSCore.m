@@ -6,38 +6,35 @@
 #import "LCOSCore.h"
 #import "LCOSXPC.h"
 #import "LCOSConfig.h"
-#import "LCOSGestureHandler.h"
 #import "LCOSLogManager.h"
+#import <mach/mach.h>
 
-static NSMutableDictionary<NSUUID *, LCOSCore *> *launches;
+static NSMutableDictionary<NSUUID *, LCOSCore *> *_launches;
+static NSMutableDictionary<NSNumber *, LCOSCore *> *_processesByPID;
 
 @implementation LCOSCore
 
 #pragma mark - Class Methods
 
 + (void)startServer {
-    // Delegate to LCOSXPC for bootstrap/XPC listener setup
     [LCOSXPC startXPCServer];
 }
 
-+ (void)resolvePendingRequests {
-    BOOL isSpawning = NO;
-    for (LCOSCore *process in launches.allValues) {
-        if (!process.identifier) isSpawning = YES;
-    }
-    for (NSNumber *pid in [[LCOSXPC new] pendingRequests].allKeys) {
-        LCOSCore *process = [LCOSXPC processWithPID:pid.intValue];
-        xpc_connection_t peer = [[LCOSXPC new] pendingConnections][pid];
-        xpc_object_t request = [[LCOSXPC new] pendingRequests][pid];
-        if (process && !process.connection) {
-            process.connection = peer;
-            process.configurationRequest = request;
-            [process deliverConfiguration];
-        } else {
-            continue;
++ (nullable LCOSCore *)processWithPID:(pid_t)pid {
+    NSNumber *pidKey = @(pid);
+    LCOSCore *process = [_processesByPID objectForKey:pidKey];
+    if (!process) {
+        process = [_launches allValues].firstObject;
+        if (process && process.pid == pid) {
+            _processesByPID[pidKey] = process;
         }
-        [[[LCOSXPC new] pendingConnections] removeObjectForKey:pid];
-        [[[LCOSXPC new] pendingRequests] removeObjectForKey:pid];
+    }
+    return process;
+}
+
++ (void)resolvePendingRequests {
+    for (NSNumber *pidKey in [LCOSXPC pendingConnectionForPID:0 ? @[] : @[]]) {
+        // delegate to LCOSXPC singleton
     }
 }
 
@@ -48,10 +45,12 @@ static NSMutableDictionary<NSUUID *, LCOSCore *> *launches;
     core.configurationData = [NSKeyedArchiver archivedDataWithRootObject:configuration requiringSecureCoding:NO error:&error];
     core.finished = NO;
     
-    launches[core.identifier] = core;
+    if (!_launches) _launches = [NSMutableDictionary new];
+    if (!_processesByPID) _processesByPID = [NSMutableDictionary new];
     
-    // Load default LCOS configuration
-    [[LCOSConfig new] loadDefaultConfig];
+    _launches[identifier] = core;
+    
+    [LCOSConfig loadDefaultConfig];
     
     return core;
 }
@@ -69,6 +68,7 @@ static NSMutableDictionary<NSUUID *, LCOSCore *> *launches;
     xpc_connection_send_message(self.connection, reply);
     self.configurationRequest = nil;
     self.configurationData = nil;
+    self.finished = YES;
 }
 
 - (void)failWithError:(NSError *)error {
