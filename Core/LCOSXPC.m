@@ -137,8 +137,17 @@ static NSMutableDictionary<NSNumber *, LCOSCore *> *_processesByPID = nil;
                     xpc_connection_cancel(peer);
                     return;
                 }
+                // Check if we already have a connection for this PID
+                if ([_pendingConnections objectForKey:pidNum] == peer) {
+                    // Already connected, just resume and resolve
+                    xpc_connection_resume(peer);
+                    [LCOSXPC resolvePendingRequests];
+                    return;
+                }
+                // Store the new connection and resolve pending requests
                 [_pendingConnections setObject:peer forKey:pidNum];
                 [LCOSXPC resolvePendingRequests];
+                xpc_connection_resume(peer);
             } else if (command == LCOSXPCCommandLaunchConfiguration) {
                 if (![_pendingConnections objectForKey:pidNum]) {
                     [_pendingRequests setObject:event forKey:pidNum];

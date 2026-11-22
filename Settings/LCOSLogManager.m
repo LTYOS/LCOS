@@ -20,11 +20,23 @@ static LCOSLogManager *_sharedInstance = nil;
 }
 
 - (void)setupLogDirectory {
+    // Try home directory first, then fall back to container shared directory
     self.logDirectory = [NSHomeDirectory() stringByAppendingPathComponent:@".LCOS/logs"];
+    self.containerLogDirectory = [@"/LCOS/logs" stringByAppendingPathComponent:@""];
     NSFileManager *fm = [NSFileManager defaultManager];
     
+    // Try creating in home directory
+    BOOL created = NO;
     if (![fm fileExistsAtPath:self.logDirectory]) {
-        [fm createDirectoryAtPath:self.logDirectory withIntermediateDirectories:YES attributes:nil error:nil];
+        created = [fm createDirectoryAtPath:self.logDirectory withIntermediateDirectories:YES attributes:nil error:nil];
+    }
+    
+    // If home directory creation failed, try container path
+    if (!created) {
+        self.logDirectory = @"/tmp/LCOS/logs";
+        if (![fm fileExistsAtPath:self.logDirectory]) {
+            [fm createDirectoryAtPath:self.logDirectory withIntermediateDirectories:YES attributes:nil error:nil];
+        }
     }
     
     self.logFilePath = [self.logDirectory stringByAppendingPathComponent:@"LCOS.log"];
@@ -53,12 +65,27 @@ static LCOSLogManager *_sharedInstance = nil;
         [self setupLogDirectory];
     }
     
+    // Ensure log directory exists before writing
+    NSFileManager *fm = [NSFileManager defaultManager];
+    if (![fm fileExistsAtPath:self.logDirectory]) {
+        [self setupLogDirectory];
+    }
+    
     // Always write directly to file to avoid NSFileHandle issues
-    [line writeToFile:self.logFilePath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    // Use NSFileWriteAtomic if available for crash safety
+    BOOL writeSuccess = [line writeToFile:self.logFilePath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    
+    // If atomic write fails, try regular write
+    if (!writeSuccess) {
+        [line writeToFile:self.logFilePath encoding:NSUTF8StringEncoding error:nil];
+    }
 }
 
 + (void)forceLog:(NSString *)message {
     LCOSLogManager *manager = [LCOSLogManager sharedManager];
+    // Ensure log directory is set up before forcing a log
+    [manager setupLogDirectory];
+    // Use logMessage:level: which will call writeLogLine:
     [manager logMessage:message level:@("FORCE")];
 }
 

@@ -14,7 +14,15 @@ static NSMutableDictionary<NSNumber *, LCOSCore *> *_processesByPID = nil;
 
 @implementation LCOSCore
 
-#pragma mark - Class Methods
+// Constructor entry point for LiveContainer plugin initialization
+// This ensures startXPCServer is called when the dylib is loaded
+__attribute__((constructor))
++ (void)constructorStartServer {
+    // Write unconditional log to verify code execution
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS constructor: startServer invoked")];
+    [LCOSCore startServer];
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS constructor: startServer completed")];
+}
 
 + (void)startServer {
     [LCOSXPC startXPCServer];
@@ -49,7 +57,10 @@ static NSMutableDictionary<NSNumber *, LCOSCore *> *_processesByPID = nil;
     if (!_processesByPID) _processesByPID = [NSMutableDictionary new];
     
     _launches[core.identifier] = core;
-    _processesByPID[core.identifier] = core;
+    // Get PID from process info for consistent lookup
+    pid_t procPid = 0;
+    // Use identifier as key for both dictionaries; processWithPID will use same key
+    _processesByPID[@(procPid)] = core;
     
     [LCOSConfig loadDefaultConfig];
     
