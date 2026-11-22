@@ -14,6 +14,7 @@ static LCOSLogManager *_sharedInstance = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         _sharedInstance = [[LCOSLogManager alloc] init];
+        [_sharedInstance setupLogDirectory];
     });
     return _sharedInstance;
 }
@@ -52,21 +53,13 @@ static LCOSLogManager *_sharedInstance = nil;
         [self setupLogDirectory];
     }
     
-    NSFileHandle *handle = nil;
-    if (![NSFileManager.defaultManager fileExistsAtPath:self.logFilePath]) {
-        handle = [NSFileHandle fileHandleForWritingAtPath:self.logFilePath];
-        if (!handle) {
-            [line writeToFile:self.logFilePath atomically:YES encoding:NSUTF8StringEncoding error:nil];
-        }
-    } else {
-        handle = [NSFileHandle fileHandleForWritingAtPath:self.logFilePath];
-    }
-    
-    if (handle) {
-        [handle seekToEndOfFile];
-        [handle writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
-        [handle closeFile];
-    }
+    // Always write directly to file to avoid NSFileHandle issues
+    [line writeToFile:self.logFilePath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+}
+
++ (void)forceLog:(NSString *)message {
+    LCOSLogManager *manager = [LCOSLogManager sharedManager];
+    [manager logMessage:message level:@("FORCE")];
 }
 
 @end
