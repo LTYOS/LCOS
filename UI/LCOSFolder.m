@@ -4,6 +4,7 @@
 //
 
 #import "LCOSFolder.h"
+#import "LCOSLogManager.h"
 
 @implementation LCOSFolder
 

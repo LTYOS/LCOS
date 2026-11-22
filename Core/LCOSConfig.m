@@ -4,18 +4,12 @@
 //
 
 #import "LCOSConfig.h"
-#import "LCSharedUtils.h"
 #import <UserNotifications/UserNotifications.h>
 
 @implementation LCOSConfig
 
 + (NSString *)appGroupID {
-    static dispatch_once_t onceToken;
-    static NSString *appGroup = nil;
-    dispatch_once(&onceToken, ^{
-        appGroup = LCSharedUtils.appGroupID;
-    });
-    return appGroup;
+    return @"group.com.lcos.livecontainer";
 }
 
 + (NSDictionary *)defaultConfigurationData {

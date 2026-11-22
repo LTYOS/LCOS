@@ -1,7 +1,6 @@
 #pragma once
 
 #import <Foundation/Foundation.h>
-#import <NSArray/NSArray.h>
 
 NS_ASSUME_NONNULL_BEGIN
 

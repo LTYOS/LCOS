@@ -1,6 +1,9 @@
 #pragma once
 
-@interface LCOSCore : NSObject <LCLivePlugIn>
+#import <Foundation/Foundation.h>
+#import <xpc/xpc.h>
+
+@interface LCOSCore : NSObject
 @property (nonatomic, copy) NSUUID *identifier;
 @property (nonatomic, copy) NSData *configurationData;
 @property (nonatomic) xpc_connection_t connection;

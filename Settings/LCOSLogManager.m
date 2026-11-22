@@ -56,7 +56,7 @@ static LCOSLogManager *_sharedInstance = nil;
     if (![NSFileManager.defaultManager fileExistsAtPath:self.logFilePath]) {
         handle = [NSFileHandle fileHandleForWritingAtPath:self.logFilePath];
         if (!handle) {
-            handle = [[NSFileHandle alloc] initWithFileURL:[NSURL fileURLWithPath:self.logFilePath]];
+            [line writeToFile:self.logFilePath atomically:YES encoding:NSUTF8StringEncoding error:nil];
         }
     } else {
         handle = [NSFileHandle fileHandleForWritingAtPath:self.logFilePath];

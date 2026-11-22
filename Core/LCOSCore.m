@@ -7,6 +7,7 @@
 #import "LCOSXPC.h"
 #import "LCOSConfig.h"
 #import "LCOSGestureHandler.h"
+#import "LCOSLogManager.h"
 
 @interface LCOSCore ()
 
@@ -68,16 +69,10 @@ static NSMutableDictionary<NSUUID *, LCOSCore *> *launches;
 #pragma mark - Instance Methods
 
 - (void)deliverConfiguration {
-    if (!self.pid || !self.configurationRequest || self.finished) return;
-    if (LCXPCConnectionGetPID(self.connection) != self.pid) {
-        xpc_connection_cancel(self.connection);
-        self.connection = nil;
-        self.configurationRequest = nil;
-        return;
-    }
+    if (!self.configurationRequest || self.finished) return;
     xpc_object_t reply = xpc_dictionary_create_reply(self.configurationRequest);
     if (!reply) {
-        [self failWithError:[LCOSLogManager errorWithDomain:@"LCOSCore" code:1 description:@"Invalid LivePlugIn launch request"]];
+        [self failWithError:[NSError errorWithDomain:@"LCOSCore" code:1 userInfo:@{NSLocalizedDescriptionKey: @"Invalid LivePlugIn launch request"}]];
         return;
     }
     xpc_dictionary_set_data(reply, "payload", self.configurationData.bytes, self.configurationData.length);

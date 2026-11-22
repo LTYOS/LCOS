@@ -7,6 +7,7 @@
 #import "LCOSCore.h"
 #import "LCOSConfig.h"
 #import "LCOSGestureHandler.h"
+#import "LCOSLogManager.h"
 #import <xpc/xpc.h>
 #import <mach/mach.h>
 #import <dispatch/dispatch.h>
@@ -47,7 +48,7 @@
 }
 
 - (void)setupXPC {
-    NSString *appGroup = LCSharedUtils.appGroupID;
+    NSString *appGroup = [LCOSConfig appGroupID];
     if (!appGroup.length) {
         [[LCOSLogManager sharedManager] logError:[NSError errorWithDomain:@"LCOSXPC" code:1 description:@"Missing app group"]];
         return;

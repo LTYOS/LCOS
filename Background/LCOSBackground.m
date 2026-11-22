@@ -13,7 +13,7 @@ static BOOL _isRunning = NO;
 + (void)startBackgroundProcess {
     if (_isRunning) return;
     _isRunning = YES;
-    [[LCOSAppContainer ensureLCOSDirectoryExists] retain];
+    [LCOSAppContainer ensureLCOSDirectoryExists];
     NSLog(@"LCOS: Background process started");
 }
 
