@@ -1,0 +1,79 @@
+name: Build LCOS.dylib
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build LCOS.dylib
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Show available SDKs
+        run: xcodebuild -showsdks
+
+      - name: Build LCOS.dylib
+        run: |
+          set -e
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "SDK: $SDK"
+
+          clang++ -dynamiclib \
+            -arch arm64 \
+            -isysroot "$SDK" \
+            -miphoneos-version-min=15.0 \
+            -fobjc-arc \
+            -fmodules \
+            -I. \
+            -ICore -IUI -IGestures -ISettings -IBackground \
+            -framework Foundation \
+            -framework UIKit \
+            -framework CoreGraphics \
+            -framework QuartzCore \
+            -framework UserNotifications \
+            -framework CoreFoundation \
+            -o LCOS.dylib \
+            Core/*.m UI/*.m Gestures/*.m Settings/*.m Background/*.m \
+            -undefined dynamic_lookup
+
+      - name: Verify dylib
+        run: |
+          file LCOS.dylib
+          ls -lh LCOS.dylib
+          xcrun lipo -info LCOS.dylib || true
+
+      - name: Package artifact
+        run: |
+          mkdir -p dist
+          cp LCOS.dylib dist/LCOS.dylib
+          cd dist && zip -r LCOS.dylib.zip LCOS.dylib
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LCOS.dylib
+          path: dist/LCOS.dylib
+          retention-days: 30
+
+      - name: Create Release (tag only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/LCOS.dylib
+            dist/LCOS.dylib.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
