@@ -30,31 +30,7 @@ jobs:
             SDK=$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || echo "")
           fi
           echo "SDK: $SDK"
-
-          clang++ -dynamiclib \
-            -arch arm64 \
-            -isysroot "$SDK" \
-            -miphoneos-version-min=15.0 \
-            -fobjc-arc \
-            -fmodules \
-            -I. \
-            -ICore -IUI -IGestures -ISettings -IBackground \
-            -framework Foundation \
-            -framework UIKit \
-            -framework CoreGraphics \
-            -framework QuartzCore \
-            -framework UserNotifications \
-            -framework CoreFoundation \
-            -o LCOS.dylib \
-            Core/*.m UI/*.m Gestures/*.m Settings/*.m Background/*.m \
-            -undefined dynamic_lookup
-
-      - name: Build LCOS.dylib
-        run: |
-          set -e
-          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-          echo "SDK: $SDK"
-
+          
           clang++ -dynamiclib \
             -arch arm64 \
             -isysroot "$SDK" \
