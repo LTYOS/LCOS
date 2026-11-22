@@ -170,8 +170,7 @@ static NSMutableDictionary<NSNumber *, LCOSCore *> *_processesByPID = nil;
     
     if (kr != KERN_SUCCESS || !MACH_PORT_VALID(service)) {
         NSString *errorDesc = [NSString stringWithFormat:@"Unable to register bootstrap service (%d)", (int)kr];
-        NSError *error = [NSError errorWithDomain:@"LCOSXPC" code:4 userInfo:@{NSLocalizedDescriptionKey: errorDesc}];
-        [[LCOSLogManager sharedManager] logError:error];
+        [[LCOSLogManager sharedManager] logError:errorDesc];
         return;
     }
     
