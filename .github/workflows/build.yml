@@ -11,18 +11,43 @@ on:
 jobs:
   build:
     name: Build LCOS.dylib
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select Xcode
+      - name: Install Xcode Command Line Tools
         run: |
-          sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
-          xcodebuild -version
+          xcode-select --install || true
+          sleep 5
 
-      - name: Show available SDKs
-        run: xcodebuild -showsdks
+      - name: Build LCOS.dylib
+        run: |
+          set -e
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path 2>/dev/null || echo "")
+          if [ -z "$SDK" ]; then
+            echo "iOS SDK not found, trying macOS SDK..."
+            SDK=$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || echo "")
+          fi
+          echo "SDK: $SDK"
+
+          clang++ -dynamiclib \
+            -arch arm64 \
+            -isysroot "$SDK" \
+            -miphoneos-version-min=15.0 \
+            -fobjc-arc \
+            -fmodules \
+            -I. \
+            -ICore -IUI -IGestures -ISettings -IBackground \
+            -framework Foundation \
+            -framework UIKit \
+            -framework CoreGraphics \
+            -framework QuartzCore \
+            -framework UserNotifications \
+            -framework CoreFoundation \
+            -o LCOS.dylib \
+            Core/*.m UI/*.m Gestures/*.m Settings/*.m Background/*.m \
+            -undefined dynamic_lookup
 
       - name: Build LCOS.dylib
         run: |
