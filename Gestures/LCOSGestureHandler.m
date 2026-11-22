@@ -9,39 +9,56 @@
 #import "LCOSLogManager.h"
 #import <UIKit/UIKit.h>
 
-static LCOSLauncherView *_sharedLauncher = nil;
+@interface LCOSGestureHandler ()
+@property (nonatomic, strong) LCOSLauncherView *sharedLauncher;
+@property (nonatomic, strong) UIPanGestureRecognizer *panGesture;
+@property (nonatomic, strong) UILongPressGestureRecognizer *longPressGesture;
+@property (nonatomic, strong) UIScreenEdgePanGestureRecognizer *edgeGesture;
+@end
 
 @implementation LCOSGestureHandler
 
-+ (void)registerGestureRecognizers {
-    // Get or create shared launcher instance
-    if (!_sharedLauncher) {
++ (instancetype)sharedHandler {
+    static LCOSGestureHandler *sharedInstance = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        sharedInstance = [[LCOSGestureHandler alloc] init];
+    });
+    return sharedInstance;
+}
+
+- (instancetype)init {
+    self = [super init];
+    if (self) {
         _sharedLauncher = [[LCOSLauncherView alloc] init];
+        [self setupGestureRecognizers];
     }
-    
-    // Add pan gesture recognizer for 3-finger swipe up/down
-    UIPanGestureRecognizer *panGesture = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePanGesture:)];
-    panGesture.numberOfTouchesRequired = 3;
-    panGesture.delegate = self;
-    [_sharedLauncher.view addGestureRecognizer:panGesture];
+    return self;
+}
+
+- (void)setupGestureRecognizers {
+    // Use a custom 3-finger pan gesture recognizer
+    _panGesture = [[ThreeFingerPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePanGesture:)];
+    _panGesture.delegate = self;
+    [_sharedLauncher.view addGestureRecognizer:_panGesture];
     
     // Add long press gesture for settings
-    UILongPressGestureRecognizer *longPressGesture = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPressGesture:)];
-    longPressGesture.numberOfTouchesRequired = 3;
-    longPressGesture.minimumPressDuration = 1.0;
-    longPressGesture.delegate = self;
-    [_sharedLauncher.view addGestureRecognizer:longPressGesture];
+    _longPressGesture = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPressGesture:)];
+    _longPressGesture.numberOfTouchesRequired = 3;
+    _longPressGesture.minimumPressDuration = 1.0;
+    _longPressGesture.delegate = self;
+    [_sharedLauncher.view addGestureRecognizer:_longPressGesture];
     
     // Add left edge swipe gesture
-    UIScreenEdgePanGestureRecognizer *edgeGesture = [[UIScreenEdgePanGestureRecognizer alloc] initWithTarget:self action:@selector(handleEdgeGesture:)];
-    edgeGesture.edges = UIRectEdgeLeft;
-    edgeGesture.delegate = self;
-    [_sharedLauncher.view addGestureRecognizer:edgeGesture];
+    _edgeGesture = [[UIScreenEdgePanGestureRecognizer alloc] initWithTarget:self action:@selector(handleEdgeGesture:)];
+    _edgeGesture.edges = UIRectEdgeLeft;
+    _edgeGesture.delegate = self;
+    [_sharedLauncher.view addGestureRecognizer:_edgeGesture];
     
     [[LCOSLogManager sharedManager] forceLog:@("LCOS Gesture: Recognizers registered")];
 }
 
-+ (void)handlePanGesture:(UIPanGestureRecognizer *)gesture {
+- (void)handlePanGesture:(ThreeFingerPanGestureRecognizer *)gesture {
     CGPoint velocity = [gesture velocityInView:gesture.view];
     
     if (gesture.state == UIGestureRecognizerStateEnded || gesture.state == UIGestureRecognizerStateRecognized) {
@@ -53,70 +70,110 @@ static LCOSLauncherView *_sharedLauncher = nil;
     }
 }
 
-+ (void)handleLongPressGesture:(UILongPressGestureRecognizer *)gesture {
+- (void)handleLongPressGesture:(UILongPressGestureRecognizer *)gesture {
     if (gesture.state == UIGestureRecognizerStateBegan) {
         [self handleThreeFingerLongPress];
     }
 }
 
-+ (void)handleEdgeGesture:(UIScreenEdgePanGestureRecognizer *)gesture {
+- (void)handleEdgeGesture:(UIScreenEdgePanGestureRecognizer *)gesture {
     if (gesture.state == UIGestureRecognizerStateRecognized) {
         [self handleLeftEdgeGesture];
     }
 }
 
-+ (void)handleThreeFingerSwipeUp {
+- (void)handleThreeFingerSwipeUp {
     [[LCOSLogManager sharedManager] forceLog:@("LCOS Gesture: Three finger swipe up - showing launcher")];
     
-    if (!_sharedLauncher) {
-        _sharedLauncher = [[LCOSLauncherView alloc] init];
-    }
-    
-    // Present launcher modally or as overlay
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *window = [UIApplication sharedApplication].windows.firstObject;
+        UIWindowScene *windowScene = [UIApplication sharedApplication].connectedScenes.firstObject;
+        UIWindow *window = windowScene.windows.firstObject;
         if (window && window.rootViewController) {
             [window.rootViewController presentViewController:_sharedLauncher animated:YES completion:nil];
         }
     });
 }
 
-+ (void)handleThreeFingerSwipeDown {
+- (void)handleThreeFingerSwipeDown {
     [[LCOSLogManager sharedManager] forceLog:@("LCOS Gesture: Three finger swipe down - dismissing launcher")];
     
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (_sharedLauncher && _sharedLauncher.presentedViewController) {
+        if (_sharedLauncher.presentedViewController) {
             [_sharedLauncher dismissViewControllerAnimated:YES completion:nil];
         }
     });
 }
 
-+ (void)handleThreeFingerLongPress {
+- (void)handleThreeFingerLongPress {
     [[LCOSLogManager sharedManager] forceLog:@("LCOS Gesture: Three finger long press - showing settings")];
     
     dispatch_async(dispatch_get_main_queue(), ^{
         LCOSSettingsView *settingsView = [[LCOSSettingsView alloc] initWithNibName:nil bundle:nil];
-        UIWindow *window = [UIApplication sharedApplication].windows.firstObject;
+        UIWindowScene *windowScene = [UIApplication sharedApplication].connectedScenes.firstObject;
+        UIWindow *window = windowScene.windows.firstObject;
         if (window && window.rootViewController) {
             [window.rootViewController presentViewController:settingsView animated:YES completion:nil];
         }
     });
 }
 
-+ (void)handleLeftEdgeGesture {
+- (void)handleLeftEdgeGesture {
     [[LCOSLogManager sharedManager] forceLog:@("LCOS Gesture: Left edge gesture - floating return")];
     // Floating return button logic - for now just log
 }
 
++ (void)registerGestureRecognizers {
+    // Called from constructor - ensures shared handler is created
+    [LCOSGestureHandler sharedHandler];
+}
+
 @end
 
-// Gesture recognizer delegate to allow simultaneous recognition
-@interface LCOSGestureHandler (GestureDelegate) <UIGestureRecognizerDelegate>
+// Custom 3-finger pan gesture recognizer
+@interface ThreeFingerPanGestureRecognizer : UIPanGestureRecognizer
+@end
+
+@implementation ThreeFingerPanGestureRecognizer
+
+- (BOOL)canBePreventedByGestureRecognizer:(UIGestureRecognizer *)preventingGestureRecognizer {
+    return NO;
+}
+
+- (BOOL)canPreventGestureRecognizer:(UIGestureRecognizer *)preventedGestureRecognizer {
+    return YES;
+}
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    if (touches.count >= 3) {
+        [super touchesBegan:touches withEvent:event];
+    }
+}
+
+- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    if (touches.count >= 3) {
+        [super touchesMoved:touches withEvent:event];
+    }
+}
+
+- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    if (touches.count >= 3) {
+        [super touchesEnded:touches withEvent:event];
+    }
+}
+
+- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [super touchesCancelled:touches withEvent:event];
+}
+
+@end
+
+// Gesture recognizer delegate
+@interface LCOSGestureHandler () <UIGestureRecognizerDelegate>
 @end
 
 @implementation LCOSGestureHandler (GestureDelegate)
 
-+ (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
     return YES;
 }
 

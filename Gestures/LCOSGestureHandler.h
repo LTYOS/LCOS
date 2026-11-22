@@ -4,11 +4,7 @@
 
 @interface LCOSGestureHandler : NSObject
 
-+ (void)handleThreeFingerSwipeUp;
-+ (void)handleThreeFingerSwipeDown;
-+ (void)handleThreeFingerLongPress;
-+ (void)handleLeftEdgeGesture;
-
++ (instancetype)sharedHandler;
 + (void)registerGestureRecognizers;
 
 @end
