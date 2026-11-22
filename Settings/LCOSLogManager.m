@@ -72,12 +72,13 @@ static LCOSLogManager *_sharedInstance = nil;
     }
     
     // Always write directly to file to avoid NSFileHandle issues
-    // Use NSFileWriteAtomic if available for crash safety
-    BOOL writeSuccess = [line writeToFile:self.logFilePath atomically:YES];
+    // Use writeToFile:atomically:encoding:error: for iOS SDK compatibility
+    BOOL writeSuccess = [line writeToFile:self.logFilePath atomically:YES
+                                 encoding:NSUTF8StringEncoding error:nil];
     
     // If atomic write fails, try regular write
     if (!writeSuccess) {
-        [line writeToFile:self.logFilePath];
+        [line writeToFile:self.logFilePath encoding:NSUTF8StringEncoding error:nil];
     }
 }
 

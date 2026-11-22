@@ -9,21 +9,19 @@
 #import "LCOSLogManager.h"
 #import <mach/mach.h>
 
-static NSMutableDictionary<NSNumber *, LCOSCore *> *_launches = nil;
-static NSMutableDictionary<NSNumber *, LCOSCore *> *_processesByPID = nil;
+static NSMutableDictionary * _launches = nil;
+static NSMutableDictionary * _processesByPID = nil;
 
 @implementation LCOSCore
 
-// Constructor entry point for LiveContainer plugin initialization
-// This ensures startXPCServer is called when the dylib is loaded
-__attribute__((constructor))
-static void LCOSConstructorEntryPoint(void) {
+// Load entry point for LiveContainer plugin initialization
+// +load is called automatically when the class is first loaded
++ (void)load {
     // Write unconditional log to verify code execution
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS constructor: startServer invoked")];
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS load: startServer invoked")];
     [LCOSCore startServer];
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS constructor: startServer completed")];
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS load: startServer completed")];
 }
-LCOSConstructorEntryPoint();
 
 + (void)startServer {
     [LCOSXPC startXPCServer];
