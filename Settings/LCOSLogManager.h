@@ -13,6 +13,6 @@
 - (void)logError:(NSError *)error;
 - (void)logMessage:(NSString *)message level:(NSString *)level;
 - (void)writeLogLine:(NSString *)line;
-+ (void)forceLog:(NSString *)message;
+- (void)forceLog:(NSString *)message;
 
 @end

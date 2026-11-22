@@ -82,12 +82,11 @@ static LCOSLogManager *_sharedInstance = nil;
     }
 }
 
-+ (void)forceLog:(NSString *)message {
-    LCOSLogManager *manager = [LCOSLogManager sharedManager];
+- (void)forceLog:(NSString *)message {
     // Ensure log directory is set up before forcing a log
-    [manager setupLogDirectory];
+    [self setupLogDirectory];
     // Use logMessage:level: which will call writeLogLine:
-    [manager logMessage:message level:@("FORCE")];
+    [self logMessage:message level:@("FORCE")];
 }
 
 @end
