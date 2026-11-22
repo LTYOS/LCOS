@@ -78,7 +78,7 @@ static LCOSLogManager *_sharedInstance = nil;
     
     // If atomic write fails, try regular write
     if (!writeSuccess) {
-        [line writeToFile:self.logFilePath encoding:NSUTF8StringEncoding error:nil];
+        [line writeToFile:self.logFilePath atomically:NO encoding:NSUTF8StringEncoding error:nil];
     }
 }
 
