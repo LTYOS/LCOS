@@ -7,9 +7,17 @@
 #import "LCOSCore.h"
 #import "LCOSConfig.h"
 #import "LCOSLogManager.h"
+#import "LCOSGestureHandler.h"
 #import <mach/mach.h>
 #import <dispatch/dispatch.h>
-#import <stdlib.h>
+
+// Forward declarations for LiveContainer private XPC APIs
+extern mach_port_t bootstrap_port;
+extern kern_return_t bootstrap_check_in(mach_port_t bootstrap, const char *name, mach_port_t *port);
+extern int xpc_pipe_receive(mach_port_t port, xpc_object_t _Nullable __strong * _Nonnull message, uint64_t flags);
+extern int xpc_pipe_routine_reply(xpc_object_t reply);
+extern void xpc_dictionary_get_audit_token(xpc_object_t dictionary, audit_token_t *token);
+extern pid_t LCXPCConnectionGetPID(xpc_connection_t connection) __asm("_xpc_connection_get_pid");
 
 @implementation LCOSXPC
 
@@ -90,13 +98,13 @@ static NSMutableDictionary<NSNumber *, LCOSCore *> *_processesByPID = nil;
     _listener = xpc_connection_create(NULL, xpcQueue);
     
     if (!_listener) {
-        [[LCOSLogManager sharedManager] logError:[NSError errorWithDomain:@"LCOSXPC" code:2 userInfo:nil]];
+        [[LCOSLogManager sharedManager] logError:[NSError errorWithDomain:@"LCOSXPC" code:2 userInfo:@{NSLocalizedDescriptionKey: @"Unable to create XPC listener"}]];
         return;
     }
     
     xpc_connection_set_event_handler(_listener, ^(xpc_object_t peer) {
         if (xpc_get_type(peer) != XPC_TYPE_CONNECTION) {
-            [[LCOSLogManager sharedManager] logError:[NSError errorWithDomain:@"LCOSXPC" code:3 userInfo:nil]];
+            [[LCOSLogManager sharedManager] logError:[NSError errorWithDomain:@"LCOSXPC" code:3 userInfo:@{NSLocalizedDescriptionKey: @"Invalid XPC connection"}]];
             xpc_connection_cancel(peer);
             return;
         }
@@ -108,13 +116,11 @@ static NSMutableDictionary<NSNumber *, LCOSCore *> *_processesByPID = nil;
             if (!peer) return;
             
             // Get PID from the XPC connection using the proper API
-            pid_t pid = 0;
-            // Use xpc_connection_get_pid when available, otherwise parse from mach ports
-            // This is a placeholder - actual PID retrieval depends on LiveContainer internals
+            pid_t pid = LCXPCConnectionGetPID(peer);
             NSNumber *pidNum = @(pid);
             
             if (xpc_get_type(event) == XPC_TYPE_ERROR) {
-                [LCOSXPC clearPendingForPID:pid.intValue];
+                [LCOSXPC clearPendingForPID:pid];
                 xpc_connection_cancel(peer);
                 return;
             }
@@ -127,7 +133,7 @@ static NSMutableDictionary<NSNumber *, LCOSCore *> *_processesByPID = nil;
             int64_t command = xpc_dictionary_get_int64(event, "cmd");
             
             if (command == LCOSXPCCommandConnect) {
-                if (pid.intValue <= 0) {
+                if (pid <= 0) {
                     xpc_connection_cancel(peer);
                     return;
                 }
@@ -163,7 +169,7 @@ static NSMutableDictionary<NSNumber *, LCOSCore *> *_processesByPID = nil;
     kern_return_t kr = bootstrap_check_in(mach_task_self(), [serviceName UTF8String], &service);
     
     if (kr != KERN_SUCCESS || !MACH_PORT_VALID(service)) {
-        [[LCOSLogManager sharedManager] logError:[NSError errorWithDomain:@"LCOSXPC" code:4 description:[NSString stringWithFormat:@"Unable to register bootstrap service (%d)", kr]]];
+        [[LCOSLogManager sharedManager] logError:[NSError errorWithDomain:@"LCOSXPC" code:4 userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Unable to register bootstrap service (%d)", kr]]}];
         return;
     }
     
@@ -175,11 +181,11 @@ static NSMutableDictionary<NSNumber *, LCOSCore *> *_processesByPID = nil;
         xpc_connection_cancel(_listener);
         _listener = nil;
         mach_port_mod_refs(mach_task_self(), service, MACH_PORT_RIGHT_RECEIVE, -1);
-        [[LCOSLogManager sharedManager] logError:[NSError errorWithDomain:@"LCOSXPC" code:5 description:@"Unable to create bootstrap source"]];
+        [[LCOSLogManager sharedManager] logError:[NSError errorWithDomain:@"LCOSXPC" code:5 userInfo:@{NSLocalizedDescriptionKey: @"Unable to create bootstrap source"}]];
         return;
     }
     
-    dispatch_source_set_event_handler(self.bootstrapSource, ^(void) {
+    dispatch_source_set_event_handler(_bootstrapSource, ^(void) {
         xpc_object_t request = nil;
         int error = xpc_pipe_receive(service, &request, 0);
         if (error || !request || xpc_get_type(request) != XPC_TYPE_DICTIONARY) return;
@@ -190,20 +196,20 @@ static NSMutableDictionary<NSNumber *, LCOSCore *> *_processesByPID = nil;
         audit_token_t audit = {{0}};
         xpc_dictionary_get_audit_token(request, &audit);
         
-        if (audit.val[5] && xpc_dictionary_get_int64(request, @"cmd") == LCOSXPCCommandConnect) {
-            xpc_dictionary_set_value(reply, @"listener", endpoint);
+        if (audit.val[5] && xpc_dictionary_get_int64(request, "cmd") == LCOSXPCCommandConnect) {
+            xpc_dictionary_set_value(reply, "listener", endpoint);
         } else {
-            xpc_dictionary_set_string(reply, @"error", @"Invalid LCOS connection request");
+            xpc_dictionary_set_string(reply, "error", "Invalid LCOS connection request");
         }
         
         xpc_pipe_routine_reply(reply);
     });
     
-    dispatch_source_set_cancel_handler(self.bootstrapSource, ^{
+    dispatch_source_set_cancel_handler(_bootstrapSource, ^{
         mach_port_mod_refs(mach_task_self(), service, MACH_PORT_RIGHT_RECEIVE, -1);
     });
     
-    dispatch_resume(self.bootstrapSource);
+    dispatch_resume(_bootstrapSource);
 }
 
 @end
