@@ -21,7 +21,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Need full history for git tags
+          fetch-depth: 0
 
       - name: Install Xcode Command Line Tools
         run: |
@@ -31,14 +31,12 @@ jobs:
       - name: Determine next version
         id: version
         run: |
-          # Get latest tag
           LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -1)
           if [ -z "$LATEST_TAG" ]; then
             LATEST_TAG="v1.0.0"
           fi
           echo "Latest tag: $LATEST_TAG"
           
-          # Parse version and increment patch
           VERSION_NUM=${LATEST_TAG#v}
           IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION_NUM"
           NEW_PATCH=$((PATCH + 1))
@@ -79,24 +77,12 @@ jobs:
             Core/*.m UI/*.m Gestures/*.m Settings/*.m Background/*.m \
             -undefined dynamic_lookup
 
-      - name: Verify dylib
-        run: |
-          file LCOS.dylib
-          ls -lh LCOS.dylib
-          xcrun lipo -info LCOS.dylib || true
-
-      - name: Package artifacts with version
+      - name: Package artifacts
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          echo "Version from step: $VERSION"
           mkdir -p dist
           cp LCOS.dylib dist/lcos_${VERSION}.dylib
-          echo "After cp, dist contents:"
-          ls -la dist/
-          cd dist
-          zip -r lcos_${VERSION}.dylib.zip lcos_${VERSION}.dylib
-          echo "After zip, dist contents:"
-          ls -la dist/
+          cd dist && zip -r lcos_${VERSION}.dylib.zip lcos_${VERSION}.dylib
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
