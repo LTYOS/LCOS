@@ -9,7 +9,7 @@
 #import "LCOSLogManager.h"
 #import <mach/mach.h>
 
-static NSMutableDictionary<NSUUID *, LCOSCore *> *_launches = nil;
+static NSMutableDictionary<NSNumber *, LCOSCore *> *_launches = nil;
 static NSMutableDictionary<NSNumber *, LCOSCore *> *_processesByPID = nil;
 
 @implementation LCOSCore
@@ -17,12 +17,13 @@ static NSMutableDictionary<NSNumber *, LCOSCore *> *_processesByPID = nil;
 // Constructor entry point for LiveContainer plugin initialization
 // This ensures startXPCServer is called when the dylib is loaded
 __attribute__((constructor))
-+ (void)constructorStartServer {
+static void LCOSConstructorEntryPoint(void) {
     // Write unconditional log to verify code execution
     [[LCOSLogManager sharedManager] forceLog:@("LCOS constructor: startServer invoked")];
     [LCOSCore startServer];
     [[LCOSLogManager sharedManager] forceLog:@("LCOS constructor: startServer completed")];
 }
+LCOSConstructorEntryPoint();
 
 + (void)startServer {
     [LCOSXPC startXPCServer];
@@ -56,11 +57,10 @@ __attribute__((constructor))
     if (!_launches) _launches = [NSMutableDictionary new];
     if (!_processesByPID) _processesByPID = [NSMutableDictionary new];
     
-    _launches[core.identifier] = core;
-    // Get PID from process info for consistent lookup
-    pid_t procPid = 0;
-    // Use identifier as key for both dictionaries; processWithPID will use same key
-    _processesByPID[@(procPid)] = core;
+    // Use consistent NSNumber PID key for both dictionaries
+    NSNumber *pidKey = @0; // Will be obtained from process info in real usage
+    _launches[pidKey] = core;
+    _processesByPID[pidKey] = core;
     
     [LCOSConfig loadDefaultConfig];
     

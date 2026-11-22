@@ -22,7 +22,7 @@ static LCOSLogManager *_sharedInstance = nil;
 - (void)setupLogDirectory {
     // Try home directory first, then fall back to container shared directory
     self.logDirectory = [NSHomeDirectory() stringByAppendingPathComponent:@".LCOS/logs"];
-    self.containerLogDirectory = [@"/LCOS/logs" stringByAppendingPathComponent:@""];
+    self.containerLogDirectory = @"/LCOS/logs";
     NSFileManager *fm = [NSFileManager defaultManager];
     
     // Try creating in home directory
@@ -73,11 +73,11 @@ static LCOSLogManager *_sharedInstance = nil;
     
     // Always write directly to file to avoid NSFileHandle issues
     // Use NSFileWriteAtomic if available for crash safety
-    BOOL writeSuccess = [line writeToFile:self.logFilePath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    BOOL writeSuccess = [line writeToFile:self.logFilePath atomically:YES];
     
     // If atomic write fails, try regular write
     if (!writeSuccess) {
-        [line writeToFile:self.logFilePath encoding:NSUTF8StringEncoding error:nil];
+        [line writeToFile:self.logFilePath];
     }
 }
 
