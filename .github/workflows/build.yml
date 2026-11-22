@@ -88,9 +88,14 @@ jobs:
       - name: Package artifacts with version
         run: |
           VERSION="${{ steps.version.outputs.version }}"
+          echo "Version from step: $VERSION"
           mkdir -p dist
-          cp LCOS.dylib "dist/lcos_${VERSION}.dylib"
-          cd dist && zip -r "lcos_${VERSION}.dylib.zip" "lcos_${VERSION}.dylib"
+          cp LCOS.dylib dist/lcos_${VERSION}.dylib
+          echo "After cp, dist contents:"
+          ls -la dist/
+          cd dist
+          zip -r lcos_${VERSION}.dylib.zip lcos_${VERSION}.dylib
+          echo "After zip, dist contents:"
           ls -la dist/
 
       - name: Upload artifact
