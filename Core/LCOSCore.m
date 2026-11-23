@@ -12,7 +12,10 @@
 
 // Pass-through window - like LCOrbitPassThroughWindow
 // Transparent regions pass touches to underlying windows
+// BUT gesture recognizers on the window itself still work
+// AND visible child view controllers receive touches normally
 @interface LCOSPassThroughWindow : UIWindow
+@property (nonatomic, weak) id launcherContainer; // For touch handling when launcher is visible
 @end
 
 @implementation LCOSPassThroughWindow
@@ -21,8 +24,21 @@
         [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSOverlayScreenTouchedNotification" object:nil];
     }
     UIView *target = [super hitTest:point withEvent:event];
-    // Pass through if touching empty area (self or root view)
-    return (target == self || target == self.rootViewController.view) ? nil : target;
+    
+    // If launcher container is visible and touch is on it, let it handle
+    if (self.launcherContainer && [self.launcherContainer isViewLoaded]) {
+        UIView *launcherView = self.launcherContainer.view;
+        if (launcherView && !launcherView.hidden && launcherView.alpha > 0.01) {
+            CGPoint localPoint = [launcherView convertPoint:point fromView:self];
+            if (CGRectContainsPoint(launcherView.bounds, localPoint)) {
+                return [super hitTest:point withEvent:event]; // Normal hit test for launcher
+            }
+        }
+    }
+    
+    // Pass through only for root view controller's transparent view
+    // Allow self (window) to receive touches for gesture recognizers
+    return (target == self.rootViewController.view) ? nil : target;
 }
 @end
 
@@ -207,6 +223,11 @@ static LCOSCore *_sharedInstance = nil;
     [self.launcherContainer.view addSubview:self.launcherView.view];
     [self.launcherView didMoveToParentViewController:self.launcherContainer];
     
+    // Set launcherContainer on pass-through window for touch handling
+    if ([self.overlayWindow isKindOfClass:[LCOSPassThroughWindow class]]) {
+        ((LCOSPassThroughWindow *)self.overlayWindow).launcherContainer = self.launcherContainer;
+    }
+    
     // Animate in
     self.launcherContainer.view.alpha = 0.0;
     [UIView animateWithDuration:0.3 animations:^{
@@ -234,6 +255,11 @@ static LCOSCore *_sharedInstance = nil;
         [self.launcherContainer willMoveToParentViewController:nil];
         [self.launcherContainer.view removeFromSuperview];
         [self.launcherContainer removeFromParentViewController];
+        
+        // Clear launcherContainer on pass-through window for touch handling
+        if ([self.overlayWindow isKindOfClass:[LCOSPassThroughWindow class]]) {
+            ((LCOSPassThroughWindow *)self.overlayWindow).launcherContainer = nil;
+        }
         
         self.isLauncherVisible = NO;
         
