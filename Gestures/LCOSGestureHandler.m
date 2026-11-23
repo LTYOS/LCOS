@@ -6,6 +6,7 @@
 #import "LCOSGestureHandler.h"
 #import "LCOSLauncherView.h"
 #import "LCOSSettingsView.h"
+#import "LCOSFloatingButton.h"
 #import "LCOSLogManager.h"
 #import <UIKit/UIKit.h>
 
@@ -48,48 +49,50 @@
     }
 }
 
+- (void)setupFloatingButton {
+    [self ensureHostWindow];
+    if (!_hostWindow) {
+        [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: No host window, retry")];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self setupFloatingButton];
+        });
+        return;
+    }
+    
+    LCOSFloatingButton *floatingButton = [LCOSFloatingButton sharedButton];
+    floatingButton.launcher = _sharedLauncher;
+    [floatingButton showOnWindow:_hostWindow];
+    
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Setup complete")];
+}
+
 - (void)setupGestureRecognizers {
     [self ensureHostWindow];
     if (!_hostWindow) {
         [[LCOSLogManager sharedManager] forceLog:@("LCOS Gesture: No host window found, will retry")];
-        // Retry after a short delay
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             [self setupGestureRecognizers];
         });
         return;
     }
     
-    // Use a custom 3-finger pan gesture recognizer - add to window, not launcher view
-    _panGesture = [[ThreeFingerPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePanGesture:)];
-    _panGesture.delegate = self;
-    [_hostWindow addGestureRecognizer:_panGesture];
-    
-    // Add long press gesture for settings
+    // Long press gesture for settings (this works per user report)
     _longPressGesture = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPressGesture:)];
     _longPressGesture.numberOfTouchesRequired = 3;
     _longPressGesture.minimumPressDuration = 1.0;
     _longPressGesture.delegate = self;
     [_hostWindow addGestureRecognizer:_longPressGesture];
     
-    // Add left edge swipe gesture
+    // Left edge swipe gesture for floating return
     _edgeGesture = [[UIScreenEdgePanGestureRecognizer alloc] initWithTarget:self action:@selector(handleEdgeGesture:)];
     _edgeGesture.edges = UIRectEdgeLeft;
     _edgeGesture.delegate = self;
     [_hostWindow addGestureRecognizer:_edgeGesture];
     
     [[LCOSLogManager sharedManager] forceLog:@("LCOS Gesture: Recognizers registered on window")];
-}
-
-- (void)handlePanGesture:(ThreeFingerPanGestureRecognizer *)gesture {
-    CGPoint velocity = [gesture velocityInView:gesture.view];
     
-    if (gesture.state == UIGestureRecognizerStateEnded || gesture.state == UIGestureRecognizerStateRecognized) {
-        if (velocity.y < -500) { // Swipe up
-            [self handleThreeFingerSwipeUp];
-        } else if (velocity.y > 500) { // Swipe down
-            [self handleThreeFingerSwipeDown];
-        }
-    }
+    // Setup floating button after gestures
+    [self setupFloatingButton];
 }
 
 - (void)handleLongPressGesture:(UILongPressGestureRecognizer *)gesture {
@@ -102,31 +105,6 @@
     if (gesture.state == UIGestureRecognizerStateRecognized) {
         [self handleLeftEdgeGesture];
     }
-}
-
-- (void)handleThreeFingerSwipeUp {
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS Gesture: Three finger swipe up - showing launcher")];
-    
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (_sharedLauncher.presentedViewController || _sharedLauncher.isBeingPresented) {
-            return; // Already showing
-        }
-        UIWindowScene *windowScene = [UIApplication sharedApplication].connectedScenes.anyObject;
-        UIWindow *window = windowScene.windows.firstObject;
-        if (window && window.rootViewController) {
-            [window.rootViewController presentViewController:_sharedLauncher animated:YES completion:nil];
-        }
-    });
-}
-
-- (void)handleThreeFingerSwipeDown {
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS Gesture: Three finger swipe down - dismissing launcher")];
-    
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (_sharedLauncher.presentedViewController) {
-            [_sharedLauncher dismissViewControllerAnimated:YES completion:nil];
-        }
-    });
 }
 
 - (void)handleThreeFingerLongPress {
@@ -143,8 +121,10 @@
 }
 
 - (void)handleLeftEdgeGesture {
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS Gesture: Left edge gesture - floating return")];
-    // Floating return button logic - for now just log
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS Gesture: Left edge gesture - toggle launcher")];
+    // Toggle launcher via floating button logic
+    LCOSFloatingButton *floatingButton = [LCOSFloatingButton sharedButton];
+    [floatingButton toggleLauncher];
 }
 
 + (void)registerGestureRecognizers {
@@ -155,7 +135,7 @@
 
 @end
 
-// Custom 3-finger pan gesture recognizer
+// Custom 3-finger pan gesture recognizer (kept for future gesture support)
 @implementation ThreeFingerPanGestureRecognizer
 
 - (BOOL)canBePreventedByGestureRecognizer:(UIGestureRecognizer *)preventingGestureRecognizer {

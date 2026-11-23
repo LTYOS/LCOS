@@ -1,0 +1,169 @@
+//
+//  LCOSFloatingButton.m
+//  LCOS.dylib
+//
+//
+#import "LCOSFloatingButton.h"
+#import "LCOSLauncherView.h"
+#import "LCOSLogManager.h"
+#import <UIKit/UIKit.h>
+
+@interface LCOSFloatingButton ()
+@property (nonatomic, assign) CGPoint initialTouchPoint;
+@property (nonatomic, assign) BOOL isDragging;
+@end
+
+@implementation LCOSFloatingButton
+
++ (instancetype)sharedButton {
+    static LCOSFloatingButton *sharedInstance = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        sharedInstance = [[LCOSFloatingButton alloc] initWithFrame:CGRectMake(0, 0, 60, 60)];
+    });
+    return sharedInstance;
+}
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        [self setupButton];
+    }
+    return self;
+}
+
+- (void)setupButton {
+    // Button appearance - circular floating button
+    self.backgroundColor = [UIColor systemBlueColor];
+    self.layer.cornerRadius = 30;
+    self.layer.masksToBounds = YES;
+    self.layer.shadowColor = [UIColor blackColor].CGColor;
+    self.layer.shadowOffset = CGSizeMake(0, 2);
+    self.layer.shadowOpacity = 0.3;
+    self.layer.shadowRadius = 4;
+    
+    // Icon - home/grid symbol
+    UIImage *icon = [UIImage systemImageNamed:@"square.grid.2x2.fill" withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:24 weight:UIImageSymbolWeightMedium]];
+    [self setImage:icon forState:UIControlStateNormal];
+    self.tintColor = [UIColor whiteColor];
+    self.imageEdgeInsets = UIEdgeInsetsMake(15, 15, 15, 15);
+    
+    // Touch events
+    [self addTarget:self action:@selector(handleTap:) forControlEvents:UIControlEventTouchUpInside];
+    [self addTarget:self action:@selector(handleDragStart:) forControlEvents:UIControlEventTouchDown];
+    [self addTarget:self action:@selector(handleDragMove:) forControlEvents:UIControlEventTouchDragInside];
+    [self addTarget:self action:@selector(handleDragMove:) forControlEvents:UIControlEventTouchDragOutside];
+    [self addTarget:self action:@selector(handleDragEnd:) forControlEvents:UIControlEventTouchUpInside];
+    [self addTarget:self action:@selector(handleDragEnd:) forControlEvents:UIControlEventTouchUpOutside];
+    [self addTarget:self action:@selector(handleDragEnd:) forControlEvents:UIControlEventTouchCancel];
+    
+    // Initially hidden
+    self.hidden = YES;
+    self.alpha = 0.0;
+}
+
+- (void)showOnWindow:(UIWindow *)window {
+    if (!window || self.superview == window) return;
+    
+    // Remove from previous window if any
+    [self removeFromSuperview];
+    
+    // Add to window at top level
+    [window addSubview:self];
+    [window bringSubviewToFront:self];
+    
+    // Position at bottom right by default
+    CGRect screenBounds = window.bounds;
+    self.frame = CGRectMake(screenBounds.size.width - 80, screenBounds.size.height - 180, 60, 60);
+    
+    // Animate in
+    self.hidden = NO;
+    [UIView animateWithDuration:0.3 animations:^{
+        self.alpha = 1.0;
+    }];
+    
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Shown on window")];
+}
+
+- (void)hide {
+    [UIView animateWithDuration:0.2 animations:^{
+        self.alpha = 0.0;
+    } completion:^(BOOL finished) {
+        self.hidden = YES;
+        [self removeFromSuperview];
+    }];
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Hidden")];
+}
+
+- (void)handleTap:(UIButton *)sender {
+    if (self.isDragging) return; // Don't toggle if was dragging
+    
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Tapped")];
+    [self toggleLauncher];
+}
+
+- (void)handleDragStart:(UIButton *)sender withEvent:(UIEvent *)event {
+    UITouch *touch = [[event allTouches] anyObject];
+    if (touch) {
+        self.initialTouchPoint = [touch locationInView:self];
+        self.isDragging = NO;
+    }
+}
+
+- (void)handleDragMove:(UIButton *)sender withEvent:(UIEvent *)event {
+    UITouch *touch = [[event allTouches] anyObject];
+    if (!touch) return;
+    
+    CGPoint currentPoint = [touch locationInView:self];
+    CGFloat dx = currentPoint.x - self.initialTouchPoint.x;
+    CGFloat dy = currentPoint.y - self.initialTouchPoint.y;
+    
+    // If moved more than threshold, consider it dragging
+    if (fabs(dx) > 5 || fabs(dy) > 5) {
+        self.isDragging = YES;
+        
+        CGPoint newCenter = CGPointMake(self.center.x + dx, self.center.y + dy);
+        
+        // Constrain to window bounds with margin
+        if (self.superview) {
+            CGFloat margin = 40;
+            CGRect bounds = self.superview.bounds;
+            newCenter.x = MAX(margin, MIN(bounds.size.width - margin, newCenter.x));
+            newCenter.y = MAX(margin, MIN(bounds.size.height - margin, newCenter.y));
+        }
+        
+        self.center = newCenter;
+    }
+}
+
+- (void)handleDragEnd:(UIButton *)sender withEvent:(UIEvent *)event {
+    if (self.isDragging) {
+        [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Drag ended")];
+    }
+    self.isDragging = NO;
+}
+
+- (void)toggleLauncher {
+    if (!self.launcher) {
+        [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: No launcher set")];
+        return;
+    }
+    
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindowScene *windowScene = [UIApplication sharedApplication].connectedScenes.anyObject;
+        UIWindow *window = windowScene.windows.firstObject;
+        if (!window || !window.rootViewController) return;
+        
+        if (self.launcher.presentedViewController || self.launcher.isBeingPresented) {
+            // Dismiss
+            [self.launcher dismissViewControllerAnimated:YES completion:nil];
+            [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Dismissed launcher")];
+        } else {
+            // Present
+            [window.rootViewController presentViewController:self.launcher animated:YES completion:nil];
+            [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Presented launcher")];
+        }
+    });
+}
+
+@end
