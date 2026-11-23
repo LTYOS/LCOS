@@ -11,11 +11,21 @@
 
 @implementation LCOSLauncherView
 
+- (instancetype)initWithNibName:(NSString *)nibNameOrNil bundle:(NSBundle *)nibBundleOrNil {
+    self = [super initWithNibName:nibNameOrNil bundle:nibBundleOrNil];
+    if (self) {
+        // CRITICAL: Set fullscreen BEFORE any presentation
+        self.modalPresentationStyle = UIModalPresentationFullScreen;
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: init modalPresentationStyle=FullScreen"];
+    }
+    return self;
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor systemBackgroundColor];
     
-    // IMPORTANT: Full screen presentation
+    // Ensure fullscreen (backup if init didn't run)
     self.modalPresentationStyle = UIModalPresentationFullScreen;
     
     // Add close button

@@ -258,16 +258,19 @@
         
         [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: rootVC=%@", window.rootViewController]];
         
-        if (self.launcher.presentedViewController || self.launcher.isBeingPresented) {
-            // Dismiss
+        if (self.launcher.presentedViewController || self.launcher.isBeingPresented || self.launcher.isBeingDismissed) {
+            // Dismiss - ensure we wait for completion before allowing re-present
             [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Dismissing launcher")];
-            [self.launcher dismissViewControllerAnimated:YES completion:nil];
-            [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Dismissed launcher")];
+            [self.launcher dismissViewControllerAnimated:YES completion:^{
+                [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Dismissed launcher completion")];
+            }];
         } else {
-            // Present
+            // Present - ensure modalPresentationStyle is set
+            [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: Launcher modalPresentationStyle=%ld", (long)self.launcher.modalPresentationStyle]];
             [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Presenting launcher")];
-            [window.rootViewController presentViewController:self.launcher animated:YES completion:nil];
-            [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Presented launcher")];
+            [window.rootViewController presentViewController:self.launcher animated:YES completion:^{
+                [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Presented launcher completion")];
+            }];
         }
     });
 }
