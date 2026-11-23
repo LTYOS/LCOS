@@ -3,14 +3,17 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 
+@class LCOSFloatingButton;
+@class LCOSLauncherView;
+
 NS_ASSUME_NONNULL_BEGIN
 
 /// LCOS 核心控制器 - 管理 overlay window、悬浮按钮和启动器
 @interface LCOSCore : NSObject
 
 @property (nonatomic, strong, nullable) UIWindow *overlayWindow;
-@property (nonatomic, strong, nullable) id floatingButton; // LCOSFloatingButton
-@property (nonatomic, strong, nullable) id launcherView;   // LCOSLauncherView
+@property (nonatomic, strong, nullable) LCOSFloatingButton *floatingButton;
+@property (nonatomic, strong, nullable) LCOSLauncherView *launcherView;
 @property (nonatomic, assign) BOOL isLauncherVisible;
 
 + (instancetype)sharedInstance;

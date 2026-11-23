@@ -57,7 +57,6 @@ static LCOSCore *_sharedInstance = nil;
             
             // Create floating button
             self.floatingButton = [LCOSFloatingButton sharedButton];
-            self.floatingButton.launcher = nil; // We'll handle toggle ourselves
             
             // Add floating button to overlay window
             [self.overlayWindow.rootViewController.view addSubview:self.floatingButton];
@@ -76,7 +75,6 @@ static LCOSCore *_sharedInstance = nil;
         self.overlayWindow.rootViewController = rootVC;
         
         self.floatingButton = [LCOSFloatingButton sharedButton];
-        self.floatingButton.launcher = nil;
         
         [self.overlayWindow.rootViewController.view addSubview:self.floatingButton];
     }
