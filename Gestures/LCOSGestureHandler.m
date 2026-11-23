@@ -36,7 +36,9 @@
 - (instancetype)init {
     self = [super init];
     if (self) {
+        [[LCOSLogManager sharedManager] forceLog:@("LCOS Gesture: init - creating sharedLauncher")];
         _sharedLauncher = [[LCOSLauncherView alloc] init];
+        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Gesture: init - sharedLauncher created=%@", _sharedLauncher]];
         // Don't setup gestures here - will be called from registerGestureRecognizers after window is ready
     }
     return self;
@@ -61,7 +63,9 @@
     }
     
     LCOSFloatingButton *floatingButton = [LCOSFloatingButton sharedButton];
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: sharedLauncher before assign=%@", _sharedLauncher]];
     floatingButton.launcher = _sharedLauncher;
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: sharedLauncher after assign=%@", floatingButton.launcher]];
     [floatingButton showOnWindow:_hostWindow];
     
     [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Setup complete")];
