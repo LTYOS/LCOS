@@ -144,23 +144,40 @@
 }
 
 - (void)toggleLauncher {
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: toggleLauncher called")];
+    
     if (!self.launcher) {
         [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: No launcher set")];
         return;
     }
     
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: launcher=%@", self.launcher]];
+    
     dispatch_async(dispatch_get_main_queue(), ^{
+        [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: on main queue")];
+        
         UIScene *scene = [UIApplication sharedApplication].connectedScenes.anyObject;
         UIWindowScene *windowScene = (UIWindowScene *)scene;
-        UIWindow *window = windowScene.windows.firstObject;
-        if (!window || !window.rootViewController) return;
+        UIWindow *window = windowScene ? windowScene.windows.firstObject : nil;
+        if (!window) {
+            [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: No window")];
+            return;
+        }
+        if (!window.rootViewController) {
+            [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: No rootViewController")];
+            return;
+        }
+        
+        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: rootVC=%@", window.rootViewController]];
         
         if (self.launcher.presentedViewController || self.launcher.isBeingPresented) {
             // Dismiss
+            [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Dismissing launcher")];
             [self.launcher dismissViewControllerAnimated:YES completion:nil];
             [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Dismissed launcher")];
         } else {
             // Present
+            [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Presenting launcher")];
             [window.rootViewController presentViewController:self.launcher animated:YES completion:nil];
             [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Presented launcher")];
         }
