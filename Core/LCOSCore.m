@@ -56,11 +56,8 @@ static LCOSCore *_sharedInstance = nil;
             rootVC.view.backgroundColor = [UIColor clearColor];
             self.overlayWindow.rootViewController = rootVC;
             
-            // Create floating button
+            // Create floating button (but don't add yet - showFloatingButton will handle)
             self.floatingButton = [LCOSFloatingButton sharedButton];
-            
-            // Add floating button to overlay window
-            [self.overlayWindow.rootViewController.view addSubview:self.floatingButton];
             
             [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSCore: overlayWindow created level=%ld", (long)self.overlayWindow.windowLevel]];
         }
@@ -76,8 +73,6 @@ static LCOSCore *_sharedInstance = nil;
         self.overlayWindow.rootViewController = rootVC;
         
         self.floatingButton = [LCOSFloatingButton sharedButton];
-        
-        [self.overlayWindow.rootViewController.view addSubview:self.floatingButton];
     }
     
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: initialize COMPLETE"];
@@ -85,7 +80,7 @@ static LCOSCore *_sharedInstance = nil;
     // Register gesture recognizers (three-finger long press for settings)
     [LCOSGestureHandler registerGestureRecognizers];
     
-    // Show floating button
+    // Show floating button (will add to rootVC.view and show window)
     [self showFloatingButton];
 }
 

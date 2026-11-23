@@ -69,17 +69,27 @@
 - (void)showOnWindow:(UIWindow *)window {
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: showOnWindow called, window=%@", window]];
     
-    if (!window || self.superview == window) {
-        [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: showOnWindow - early return"];
+    if (!window || !window.rootViewController) {
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: showOnWindow - no window or rootVC"];
         return;
     }
     
-    // Remove from previous window if any
+    // Check if already on this window's root view
+    if (self.superview == window.rootViewController.view) {
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: showOnWindow - already on this rootVC view"];
+        self.hidden = NO;
+        [UIView animateWithDuration:0.3 animations:^{
+            self.alpha = 1.0;
+        }];
+        return;
+    }
+    
+    // Remove from previous view if any
     [self removeFromSuperview];
     
-    // Add to window at top level
-    [window addSubview:self];
-    [window bringSubviewToFront:self];
+    // Add to rootViewController.view (not window directly!)
+    [window.rootViewController.view addSubview:self];
+    [window.rootViewController.view bringSubviewToFront:self];
     
     // Position at bottom right by default
     CGRect screenBounds = window.bounds;
@@ -97,7 +107,7 @@
     
     // Force to topmost layer
     self.layer.zPosition = CGFLOAT_MAX;
-    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: Shown on window, frame=%@, layer.zPosition=%.0f", NSStringFromCGRect(self.frame), self.layer.zPosition]];
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: Shown on window.rootViewController.view, frame=%@, layer.zPosition=%.0f", NSStringFromCGRect(self.frame), self.layer.zPosition]];
 }
 
 - (void)hide {
