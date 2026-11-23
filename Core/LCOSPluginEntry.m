@@ -1,7 +1,7 @@
 //
 //  LCOSPluginEntry.m
 //  LCOS.dylib
-//  LiveContainer plugin entry point
+//  LiveContainer plugin entry point - Minimal constructor, deferred init
 //
 
 #import "LCOSPluginEntry.h"
@@ -11,47 +11,61 @@
 #import "LCOSGestureHandler.h"
 #import <mach/mach.h>
 
-// Global flag to track if plugin is initialized
-static BOOL LCOSPluginInitialized = NO;
+// Static initialization - runs before constructor
+static void LCOSInitialize(void) __attribute__((constructor));
 
-// Constructor entry point - guaranteed to run when dylib is loaded
-__attribute__((constructor))
-static void LCOSPluginConstructor(void) {
-    // Just mark as initialized - NO logging here to avoid early crashes
-    LCOSPluginInitialized = YES;
-    
-    // Defer all initialization to main queue after app is ready
-    dispatch_async(dispatch_get_main_queue(), ^{
-        @autoreleasepool {
-            // Initialize logging first
-            [[LCOSLogManager sharedManager] forceLog:@("LCOS Plugin: Main queue init started")];
-            
-            // Start XPC server (will handle bootstrap failure gracefully)
-            [LCOSCore startServer];
-            
-            // Register gesture handlers
-            [LCOSGestureHandler registerGestureRecognizers];
-            
-            [[LCOSLogManager sharedManager] forceLog:@("LCOS Plugin: Main queue init complete")];
-        }
-    });
+static void LCOSInitialize(void) {
+    // ABSOLUTELY MINIMAL: Just register for app activation notification
+    // Do NOT call any LCOS code here - not even logging
+    NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
+    [center addObserverForName:UIApplicationDidBecomeActiveNotification
+                        object:nil
+                         queue:[NSOperationQueue mainQueue]
+                    usingBlock:^(NSNotification *note) {
+        // Remove observer immediately - one-time only
+        [[NSNotificationCenter defaultCenter] removeObserver:nil
+                                                        name:UIApplicationDidBecomeActiveNotification
+                                                      object:nil];
+        
+        // NOW it's safe to initialize - app is fully active
+        dispatch_async(dispatch_get_main_queue(), ^{
+            @autoreleasepool {
+                [[LCOSLogManager sharedManager] forceLog:@("LCOS: App active, initializing...")];
+                
+                [LCOSCore startServer];
+                [LCOSGestureHandler registerGestureRecognizers];
+                
+                [[LCOSLogManager sharedManager] forceLog:@("LCOS: Initialization complete")];
+            }
+        });
+    }];
 }
 
-// Also provide +load as backup (in case constructor doesn't work)
+// Backup: +load also registers (in case constructor order differs)
 @implementation LCOSPluginEntry
 
 + (void)load {
-    // +load runs very early, defer to main queue
-    dispatch_async(dispatch_get_main_queue(), ^{
-        @autoreleasepool {
-            [[LCOSLogManager sharedManager] forceLog:@("LCOS Plugin: +load main queue init started")];
-            
-            [LCOSCore startServer];
-            [LCOSGestureHandler registerGestureRecognizers];
-            
-            [[LCOSLogManager sharedManager] forceLog:@("LCOS Plugin: +load main queue init complete")];
-        }
-    });
+    // Same pattern - defer to app activation
+    NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
+    [center addObserverForName:UIApplicationDidBecomeActiveNotification
+                        object:nil
+                         queue:[NSOperationQueue mainQueue]
+                    usingBlock:^(NSNotification *note) {
+        [[NSNotificationCenter defaultCenter] removeObserver:nil
+                                                        name:UIApplicationDidBecomeActiveNotification
+                                                      object:nil];
+        
+        dispatch_async(dispatch_get_main_queue(), ^{
+            @autoreleasepool {
+                [[LCOSLogManager sharedManager] forceLog:@("LCOS: +load path - initializing...")];
+                
+                [LCOSCore startServer];
+                [LCOSGestureHandler registerGestureRecognizers];
+                
+                [[LCOSLogManager sharedManager] forceLog:@("LCOS: +load path complete")];
+            }
+        });
+    }];
 }
 
 @end
