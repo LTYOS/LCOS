@@ -18,6 +18,7 @@
 @property (nonatomic, strong) ThreeFingerPanGestureRecognizer *panGesture;
 @property (nonatomic, strong) UILongPressGestureRecognizer *longPressGesture;
 @property (nonatomic, strong) UIScreenEdgePanGestureRecognizer *edgeGesture;
+@property (nonatomic, strong) UIWindow *hostWindow;
 @end
 
 @implementation LCOSGestureHandler
@@ -35,31 +36,42 @@
     self = [super init];
     if (self) {
         _sharedLauncher = [[LCOSLauncherView alloc] init];
+        _hostWindow = [UIApplication sharedApplication].connectedScenes.anyObject;
+        _hostWindow = _hostWindow ? _hostWindow.windows.firstObject : nil;
         [self setupGestureRecognizers];
     }
     return self;
 }
 
 - (void)setupGestureRecognizers {
-    // Use a custom 3-finger pan gesture recognizer
+    if (!_hostWindow) {
+        [[LCOSLogManager sharedManager] forceLog:@("LCOS Gesture: No host window found, will retry")];
+        // Retry after a short delay
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self setupGestureRecognizers];
+        });
+        return;
+    }
+    
+    // Use a custom 3-finger pan gesture recognizer - add to window, not launcher view
     _panGesture = [[ThreeFingerPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePanGesture:)];
     _panGesture.delegate = self;
-    [_sharedLauncher.view addGestureRecognizer:_panGesture];
+    [_hostWindow addGestureRecognizer:_panGesture];
     
     // Add long press gesture for settings
     _longPressGesture = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPressGesture:)];
     _longPressGesture.numberOfTouchesRequired = 3;
     _longPressGesture.minimumPressDuration = 1.0;
     _longPressGesture.delegate = self;
-    [_sharedLauncher.view addGestureRecognizer:_longPressGesture];
+    [_hostWindow addGestureRecognizer:_longPressGesture];
     
     // Add left edge swipe gesture
     _edgeGesture = [[UIScreenEdgePanGestureRecognizer alloc] initWithTarget:self action:@selector(handleEdgeGesture:)];
     _edgeGesture.edges = UIRectEdgeLeft;
     _edgeGesture.delegate = self;
-    [_sharedLauncher.view addGestureRecognizer:_edgeGesture];
+    [_hostWindow addGestureRecognizer:_edgeGesture];
     
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS Gesture: Recognizers registered")];
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS Gesture: Recognizers registered on window")];
 }
 
 - (void)handlePanGesture:(ThreeFingerPanGestureRecognizer *)gesture {
@@ -90,6 +102,9 @@
     [[LCOSLogManager sharedManager] forceLog:@("LCOS Gesture: Three finger swipe up - showing launcher")];
     
     dispatch_async(dispatch_get_main_queue(), ^{
+        if (_sharedLauncher.presentedViewController || _sharedLauncher.isBeingPresented) {
+            return; // Already showing
+        }
         UIWindowScene *windowScene = [UIApplication sharedApplication].connectedScenes.anyObject;
         UIWindow *window = windowScene.windows.firstObject;
         if (window && window.rootViewController) {
