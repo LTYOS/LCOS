@@ -232,10 +232,10 @@
 }
 
 - (void)toggleLauncher {
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: toggleLauncher called"));
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: toggleLauncher called"];
     
     if (!self.launcher) {
-        [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: No launcher set"));
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: No launcher set"];
         return;
     }
     
@@ -249,7 +249,7 @@
     }
     
     dispatch_async(dispatch_get_main_queue(), ^{
-        [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: on main queue"));
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: on main queue"];
         
         UIScene *scene = [UIApplication sharedApplication].connectedScenes.anyObject;
         UIWindowScene *windowScene = (UIWindowScene *)scene;
@@ -267,12 +267,12 @@
         if (self.launcher.presentedViewController || self.launcher.isBeingPresented || self.launcher.isBeingDismissed) {
             // Dismiss - ensure we wait for completion before allowing re-present
             [self.launcher dismissViewControllerAnimated:YES completion:^{
-                [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Dismissed launcher completion"));
+                [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: Dismissed launcher completion"];
             }];
         } else {
             // Present - ensure modalPresentationStyle is set on rootVC before presenting
             [window.rootViewController presentViewController:self.launcher animated:YES completion:^{
-                [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Presented launcher completion"));
+                [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: Presented launcher completion"];
             }];
         }
     });
