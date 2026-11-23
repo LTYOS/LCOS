@@ -137,16 +137,12 @@ static LCOSLogManager *_sharedInstance = nil;
         record[@"details"] = [details description] ?: @"";
     }
     
-    NSData *encoded = [self encodeEvents:@[record]];
-    if (encoded.length > 131072) { // 128KB limit per event
-        NSString *text = [details description] ?: @"";
-        record[@"details"] = [text substringToIndex:MIN(text.length, 8192)];
-        record[@"truncated"] = @YES;
-        record[@"event"] = [record[@"event"] substringToIndex:MIN([record[@"event"] length], 256)];
-        record[@"guestID"] = [guestID substringToIndex:MIN(guestID.length, 512)];
-    }
-    
     return record;
+}
+
+// Instance method for forceLog
+- (void)forceLog:(NSString *)message {
+    [self writeLogInternal:@"force" details:@{@"message": message}];
 }
 
 - (void)writeLogInternal:(NSString *)event details:(id)details {
@@ -170,6 +166,7 @@ static LCOSLogManager *_sharedInstance = nil;
                 
                 NSData *bytes = [self encodeEvents:events];
                 if (bytes.length > 262144) {
+                    // Rotate: keep only last event, move rest to .old.json
                     NSArray *previous = [events subarrayWithRange:NSMakeRange(0, events.count - 1)];
                     NSData *oldData = [self encodeEvents:previous];
                     if (oldData.length <= 262144) {
@@ -222,6 +219,12 @@ static LCOSLogManager *_sharedInstance = nil;
     [self writeLogInternal:level details:@{@"message": message}];
 }
 
+// Instance method for forceLog (called on sharedManager)
+- (void)forceLog:(NSString *)message {
+    [self writeLogInternal:@"force" details:@{@"message": message}];
+}
+
+// Class method for forceLog (convenience)
 + (void)forceLog:(NSString *)message {
     LCOSLogManager *manager = [LCOSLogManager sharedManager];
     [manager writeLogInternal:@"force" details:@{@"message": message}];

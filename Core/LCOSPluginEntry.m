@@ -10,6 +10,7 @@
 #import "LCOSLogManager.h"
 #import "LCOSGestureHandler.h"
 #import <mach/mach.h>
+#import <UIKit/UIKit.h>
 
 // Static initialization - runs before constructor
 static void LCOSInitialize(void) __attribute__((constructor));
