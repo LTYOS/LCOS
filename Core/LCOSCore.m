@@ -15,7 +15,9 @@ static LCOSCore *_sharedInstance = nil;
 + (void)load {
     [[LCOSLogManager sharedManager] forceLog:@"LCOS load: +load invoked"];
     [LCOSCore sharedInstance];
-    [[LCOSLogManager sharedManager] forceLog:@"LCOS load: sharedInstance created"];
+    // Initialize the core (overlay window, floating button) immediately
+    [[LCOSCore sharedInstance] initialize];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS load: initialize complete"];
 }
 
 + (instancetype)sharedInstance {
