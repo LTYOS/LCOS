@@ -58,7 +58,7 @@ static LCOSLogManager *_sharedInstance = nil;
     [fm createDirectoryAtPath:self.logDirectory withIntermediateDirectories:YES attributes:nil error:nil];
     
     // Force write a test log to verify path works
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS LogManager initialized at: " + rootPath)];
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS LogManager initialized at: %@", rootPath]];
 }
 
 - (NSString *)logRootPath {

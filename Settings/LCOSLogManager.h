@@ -9,7 +9,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (instancetype)sharedManager;
 - (void)logError:(NSError *)error;
 - (void)logMessage:(NSString *)message level:(NSString *)level;
-+ (void)forceLog:(NSString *)message;
+- (void)forceLog:(NSString *)message; // Instance method (called on sharedManager)
 + (void)clearLogs;
 + (NSData *)exportLogsAsJSON;
 

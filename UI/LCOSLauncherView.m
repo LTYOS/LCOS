@@ -9,11 +9,6 @@
 #import "LCOSDock.h"
 #import "LCOSLogManager.h"
 
-@interface LCOSLauncherView ()
-@property (nonatomic, strong) LCOSGrid *grid;
-@property (nonatomic, strong) LCOSDock *dock;
-@end
-
 @implementation LCOSLauncherView
 
 - (void)viewDidLoad {
@@ -30,7 +25,7 @@
     self.dock.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
     [self.view addSubview:self.dock];
     
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS Launcher UI loaded, view bounds: " + NSStringFromCGRect(self.view.bounds))];
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Launcher UI loaded, view bounds: %@", NSStringFromCGRect(self.view.bounds)]];
 }
 
 - (void)viewDidLayoutSubviews {
@@ -46,12 +41,12 @@
 
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS Launcher viewDidAppear")];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher viewDidAppear"];
 }
 
 - (void)viewWillDisappear:(BOOL)animated {
     [super viewWillDisappear:animated];
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS Launcher viewWillDisappear")];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher viewWillDisappear"];
 }
 
 @end
