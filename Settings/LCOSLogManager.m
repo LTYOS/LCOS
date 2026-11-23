@@ -219,7 +219,7 @@ static LCOSLogManager *_sharedInstance = nil;
     [self writeLogInternal:level details:@{@"message": message}];
 }
 
-// Instance method for forceLog (called on sharedManager)
+// Instance method for forceLog
 - (void)forceLog:(NSString *)message {
     [self writeLogInternal:@"force" details:@{@"message": message}];
 }
