@@ -208,6 +208,30 @@
     [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleDragEnd EXIT")];
 }
 
+// Touch event overrides - trace responder chain
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: touchesBegan touches=%@", touches]];
+    [super touchesBegan:touches withEvent:event];
+}
+
+- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: touchesEnded touches=%@", touches]];
+    [super touchesEnded:touches withEvent:event];
+}
+
+- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: touchesCancelled touches=%@", touches]];
+    [super touchesCancelled:touches withEvent:event];
+}
+
+// Trace action sending
+- (BOOL)sendAction:(SEL)action to:(id)target forEvent:(UIEvent *)event {
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: sendAction action=%@ target=%@ event=%@", NSStringFromSelector(action), target, event]];
+    BOOL result = [super sendAction:action to:target forEvent:event];
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: sendAction result=%d", result]];
+    return result;
+}
+
 - (void)toggleLauncher {
     [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: toggleLauncher called")];
     
