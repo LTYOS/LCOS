@@ -4,7 +4,7 @@
 
 @class LCOSLauncherView;
 
-@interface LCOSFloatingButton : UIButton
+@interface LCOSFloatingButton : UIButton <UIGestureRecognizerDelegate>
 
 @property (nonatomic, weak) LCOSLauncherView *launcher;
 

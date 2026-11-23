@@ -88,9 +88,9 @@
     _longPressGesture.delegate = self;
     [_hostWindow addGestureRecognizer:_longPressGesture];
     
-    // Left edge swipe gesture for floating return
+    // Right edge swipe gesture (swipe left from right edge) for floating return
     _edgeGesture = [[UIScreenEdgePanGestureRecognizer alloc] initWithTarget:self action:@selector(handleEdgeGesture:)];
-    _edgeGesture.edges = UIRectEdgeLeft;
+    _edgeGesture.edges = UIRectEdgeRight;
     _edgeGesture.delegate = self;
     [_hostWindow addGestureRecognizer:_edgeGesture];
     

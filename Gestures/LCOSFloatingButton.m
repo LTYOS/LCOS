@@ -79,7 +79,7 @@
     // Remove from previous window if any
     [self removeFromSuperview];
     
-    // Add to window at top level
+    // Add to window at top level - use highest level to ensure tap works
     [window addSubview:self];
     [window bringSubviewToFront:self];
     
@@ -92,6 +92,10 @@
     [UIView animateWithDuration:0.3 animations:^{
         self.alpha = 1.0;
     }];
+    
+    // Ensure button is user interaction enabled
+    self.userInteractionEnabled = YES;
+    self.exclusiveTouch = YES;
     
     [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Shown on window")];
 }
@@ -117,6 +121,15 @@
     [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Tapped, calling toggleLauncher")];
     [self toggleLauncher];
     [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleTap EXIT")];
+}
+
+// UIGestureRecognizerDelegate - ensure button receives touches
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
+    // Allow all touches on the button itself
+    if (touch.view == self || [touch.view isDescendantOfView:self]) {
+        return YES;
+    }
+    return NO;
 }
 
 - (void)handleDragStart:(UIButton *)sender withEvent:(UIEvent *)event {
