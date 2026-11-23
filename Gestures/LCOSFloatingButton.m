@@ -243,7 +243,11 @@
     
     // Force fullscreen presentation before presenting
     [[LCOSLogManager sharedManager] forceLog(@("LCOS FloatingButton: Setting rootVC modalPresentationStyle=FullScreen"));
-    window.rootViewController.modalPresentationStyle = UIModalPresentationFullScreen;
+    UIWindow *rootWindow = [UIApplication sharedApplication].keyWindow;
+    if (!rootWindow) rootWindow = [[UIApplication sharedApplication] windows].firstObject;
+    if (rootWindow.rootViewController) {
+        rootWindow.rootViewController.modalPresentationStyle = UIModalPresentationFullScreen;
+    }
     
     dispatch_async(dispatch_get_main_queue(), ^{
         [[LCOSLogManager sharedManager] forceLog(@("LCOS FloatingButton: on main queue"));
@@ -267,7 +271,7 @@
             // Dismiss - ensure we wait for completion before allowing re-present
             [[LCOSLogManager sharedManager] forceLog(@("LCOS FloatingButton: Dismissing launcher"));
             [self.launcher dismissViewControllerAnimated:YES completion:^{
-                [[LCOSLogManager sharedManager] forceLog(@("LCOS FloatingButton: Dismissed launcher completion")]);
+                [[LCOSLogManager sharedManager] forceLog(@("LCOS FloatingButton: Dismissed launcher completion"));
             }];
         } else {
             // Present - ensure modalPresentationStyle is set on rootVC before presenting
