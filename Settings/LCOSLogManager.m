@@ -5,7 +5,6 @@
 //
 
 #import "LCOSLogManager.h"
-#import "LCOSAppContainer.h"
 #import <sys/file.h>
 #import <sys/stat.h>
 #import <fcntl.h>

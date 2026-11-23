@@ -8,15 +8,23 @@
 #import "LCOSGrid.h"
 #import "LCOSDock.h"
 #import "LCOSLogManager.h"
+#import "LCOSCore.h"
 
 @implementation LCOSLauncherView
 
 - (instancetype)initWithNibName:(NSString *)nibNameOrNil bundle:(NSBundle *)nibBundleOrNil {
     self = [super initWithNibName:nibNameOrNil bundle:nibBundleOrNil];
     if (self) {
-        // CRITICAL: Set fullscreen BEFORE any presentation
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: init START"];
         self.modalPresentationStyle = UIModalPresentationFullScreen;
-        [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: init modalPresentationStyle=FullScreen"];
+    }
+    return self;
+}
+
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: init START"];
     }
     return self;
 }
@@ -26,10 +34,6 @@
     self.view.backgroundColor = [UIColor systemBackgroundColor];
     
     [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: viewDidLoad START"];
-    
-    // Full screen presentation - must be set before any modal presentation
-    self.modalPresentationStyle = UIModalPresentationFullScreen;
-    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Launcher: viewDidLoad modalPresentationStyle=%ld", (long)self.modalPresentationStyle]];
     
     // Add close button
     UIButton *closeButton = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -59,7 +63,7 @@
 
 - (void)closeTapped:(UIButton *)sender {
     [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher close tapped"];
-    [self dismissViewControllerAnimated:YES completion:nil];
+    [[LCOSCore sharedInstance] hideLauncher];
 }
 
 - (void)viewDidLayoutSubviews {

@@ -2,15 +2,12 @@
 
 #import <UIKit/UIKit.h>
 
-@class LCOSLauncherView;
+@class LCOSCore;
 
-@interface LCOSFloatingButton : UIButton <UIGestureRecognizerDelegate>
-
-@property (nonatomic, weak) LCOSLauncherView *launcher;
+@interface LCOSFloatingButton : UIButton
 
 + (instancetype)sharedButton;
 - (void)showOnWindow:(UIWindow *)window;
 - (void)hide;
-- (void)toggleLauncher;
 
 @end

@@ -2,9 +2,9 @@
 //  LCOSFloatingButton.m
 //  LCOS.dylib
 //
-//
+
 #import "LCOSFloatingButton.h"
-#import "LCOSLauncherView.h"
+#import "LCOSCore.h"
 #import "LCOSLogManager.h"
 #import <UIKit/UIKit.h>
 
@@ -25,7 +25,7 @@
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: initWithFrame ENTRY")];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: initWithFrame ENTRY"];
     self = [super initWithFrame:frame];
     if (self) {
         [self setupButton];
@@ -35,7 +35,7 @@
 }
 
 - (void)dealloc {
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: dealloc called")];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: dealloc called"];
 }
 
 - (void)setupButton {
@@ -54,14 +54,8 @@
     self.tintColor = [UIColor whiteColor];
     self.imageEdgeInsets = UIEdgeInsetsMake(15, 15, 15, 15);
     
-    // Touch events - use correct selector signatures matching method signatures
+    // Touch events - only tap to toggle launcher
     [self addTarget:self action:@selector(handleTap:) forControlEvents:UIControlEventTouchUpInside];
-    [self addTarget:self action:@selector(handleDragStart:forEvent:) forControlEvents:UIControlEventTouchDown];
-    [self addTarget:self action:@selector(handleDragMove:forEvent:) forControlEvents:UIControlEventTouchDragInside];
-    [self addTarget:self action:@selector(handleDragMove:forEvent:) forControlEvents:UIControlEventTouchDragOutside];
-    [self addTarget:self action:@selector(handleDragEnd:forEvent:) forControlEvents:UIControlEventTouchUpInside];
-    [self addTarget:self action:@selector(handleDragEnd:forEvent:) forControlEvents:UIControlEventTouchUpOutside];
-    [self addTarget:self action:@selector(handleDragEnd:forEvent:) forControlEvents:UIControlEventTouchCancel];
     
     // Initially hidden
     self.hidden = YES;
@@ -76,14 +70,14 @@
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: showOnWindow called, window=%@", window]];
     
     if (!window || self.superview == window) {
-        [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: showOnWindow - early return")];
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: showOnWindow - early return"];
         return;
     }
     
     // Remove from previous window if any
     [self removeFromSuperview];
     
-    // Add to window at top level - use highest level to ensure tap works
+    // Add to window at top level
     [window addSubview:self];
     [window bringSubviewToFront:self];
     
@@ -101,26 +95,9 @@
     self.userInteractionEnabled = YES;
     self.exclusiveTouch = YES;
     
-    // Log layer info for debugging
-    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: Shown on window, frame=%@, superview=%@, layer.zPosition=%.0f", NSStringFromCGRect(self.frame), self.superview, self.layer.zPosition]];
-    
     // Force to topmost layer
     self.layer.zPosition = CGFLOAT_MAX;
-    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: layer.zPosition set to MAX=%.0f", self.layer.zPosition]];
-}
-
-// Expand touchable area beyond visual bounds
-- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: hitTest point=(%.0f,%.0f) bounds=%@", point.x, point.y, NSStringFromCGRect(self.bounds)]];
-    // Expand hit test area by 20pt in all directions
-    CGRect expandedBounds = CGRectInset(self.bounds, -20, -20);
-    if (CGRectContainsPoint(expandedBounds, point)) {
-        [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: hitTest -> self (expanded)")];
-        return self;
-    }
-    UIView *result = [super hitTest:point withEvent:event];
-    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: hitTest -> %@", result ?: @"nil"]];
-    return result;
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: Shown on window, frame=%@, layer.zPosition=%.0f", NSStringFromCGRect(self.frame), self.layer.zPosition]];
 }
 
 - (void)hide {
@@ -130,20 +107,34 @@
         self.hidden = YES;
         [self removeFromSuperview];
     }];
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Hidden")];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: Hidden"];
+}
+
+// Expand touchable area beyond visual bounds
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: hitTest point=(%.0f,%.0f) bounds=%@", point.x, point.y, NSStringFromCGRect(self.bounds)]];
+    // Expand hit test area by 20pt in all directions
+    CGRect expandedBounds = CGRectInset(self.bounds, -20, -20);
+    if (CGRectContainsPoint(expandedBounds, point)) {
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: hitTest -> self (expanded)"];
+        return self;
+    }
+    UIView *result = [super hitTest:point withEvent:event];
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: hitTest -> %@", result ?: @"nil"]];
+    return result;
 }
 
 - (void)handleTap:(UIButton *)sender {
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleTap ENTRY")];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: handleTap ENTRY"];
     
     if (self.isDragging) {
-        [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleTap - isDragging true, return")];
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: handleTap - isDragging true, return"];
         return;
     }
     
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Tapped, calling toggleLauncher")];
-    [self toggleLauncher];
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleTap EXIT")];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: Tapped, calling LCOSCore toggleLauncher"];
+    [[LCOSCore sharedInstance] toggleLauncher];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: handleTap EXIT"];
 }
 
 // UIGestureRecognizerDelegate - ensure button receives touches
@@ -151,61 +142,11 @@
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: shouldReceiveTouch gesture=%@ touchView=%@", gestureRecognizer, touch.view]];
     // Allow all touches on the button itself
     if (touch.view == self || [touch.view isDescendantOfView:self]) {
-        [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: shouldReceiveTouch -> YES")];
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: shouldReceiveTouch -> YES"];
         return YES;
     }
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: shouldReceiveTouch -> NO")];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: shouldReceiveTouch -> NO"];
     return NO;
-}
-
-- (void)handleDragStart:(UIButton *)sender forEvent:(UIEvent *)event {
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleDragStart ENTRY")];
-    UITouch *touch = [[event allTouches] anyObject];
-    if (touch) {
-        self.initialTouchPoint = [touch locationInView:self];
-        self.isDragging = NO;
-    }
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleDragStart EXIT")];
-}
-
-- (void)handleDragMove:(UIButton *)sender forEvent:(UIEvent *)event {
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleDragMove ENTRY")];
-    UITouch *touch = [[event allTouches] anyObject];
-    if (!touch) {
-        [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleDragMove - no touch")];
-        return;
-    }
-    
-    CGPoint currentPoint = [touch locationInView:self];
-    CGFloat dx = currentPoint.x - self.initialTouchPoint.x;
-    CGFloat dy = currentPoint.y - self.initialTouchPoint.y;
-    
-    // If moved more than threshold, consider it dragging
-    if (fabs(dx) > 5 || fabs(dy) > 5) {
-        self.isDragging = YES;
-        
-        CGPoint newCenter = CGPointMake(self.center.x + dx, self.center.y + dy);
-        
-        // Constrain to window bounds with margin
-        if (self.superview) {
-            CGFloat margin = 40;
-            CGRect bounds = self.superview.bounds;
-            newCenter.x = MAX(margin, MIN(bounds.size.width - margin, newCenter.x));
-            newCenter.y = MAX(margin, MIN(bounds.size.height - margin, newCenter.y));
-        }
-        
-        self.center = newCenter;
-    }
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleDragMove EXIT")];
-}
-
-- (void)handleDragEnd:(UIButton *)sender forEvent:(UIEvent *)event {
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleDragEnd ENTRY")];
-    if (self.isDragging) {
-        [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Drag ended")];
-    }
-    self.isDragging = NO;
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleDragEnd EXIT")];
 }
 
 // Touch event overrides - trace responder chain
@@ -228,54 +169,7 @@
 - (void)sendAction:(SEL)action to:(id)target forEvent:(UIEvent *)event {
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: sendAction action=%@ target=%@ event=%@", NSStringFromSelector(action), target, event]];
     [super sendAction:action to:target forEvent:event];
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: sendAction completed")];
-}
-
-- (void)toggleLauncher {
-    [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: toggleLauncher called"];
-    
-    if (!self.launcher) {
-        [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: No launcher set"];
-        return;
-    }
-    
-    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: launcher=%@", self.launcher]];
-    
-    // Force fullscreen presentation before presenting
-    UIWindow *rootWindow = [UIApplication sharedApplication].keyWindow;
-    if (!rootWindow) rootWindow = [[UIApplication sharedApplication] windows].firstObject;
-    if (rootWindow.rootViewController) {
-        rootWindow.rootViewController.modalPresentationStyle = UIModalPresentationFullScreen;
-    }
-    
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: on main queue"];
-        
-        UIScene *scene = [UIApplication sharedApplication].connectedScenes.anyObject;
-        UIWindowScene *windowScene = (UIWindowScene *)scene;
-        UIWindow *window = windowScene ? windowScene.windows.firstObject : nil;
-        if (!window) {
-            return;
-        }
-        if (!window.rootViewController) {
-            return;
-        }
-        
-        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: rootVC=%@", window.rootViewController]];
-        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: rootVC modalPresentationStyle=%ld", (long)window.rootViewController.modalPresentationStyle]];
-        
-        if (self.launcher.presentedViewController || self.launcher.isBeingPresented || self.launcher.isBeingDismissed) {
-            // Dismiss - ensure we wait for completion before allowing re-present
-            [self.launcher dismissViewControllerAnimated:YES completion:^{
-                [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: Dismissed launcher completion"];
-            }];
-        } else {
-            // Present - ensure modalPresentationStyle is set on rootVC before presenting
-            [window.rootViewController presentViewController:self.launcher animated:YES completion:^{
-                [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: Presented launcher completion"];
-            }];
-        }
-    });
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: sendAction completed"];
 }
 
 @end

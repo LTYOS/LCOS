@@ -1,33 +1,25 @@
 #pragma once
 
 #import <Foundation/Foundation.h>
-#import <xpc/xpc.h>
+#import <UIKit/UIKit.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
-/// 一次 LiveContainer 应用启动的会话记录。
+/// LCOS 核心控制器 - 管理 overlay window、悬浮按钮和启动器
 @interface LCOSCore : NSObject
 
-@property (nonatomic, copy, nullable) NSUUID *identifier;
-@property (nonatomic, copy, nullable) NSData *configurationData;
-@property (nonatomic, assign) BOOL finished;
-@property (nonatomic, assign) pid_t pid;
-@property (nonatomic, assign) xpc_connection_t connection;
-@property (nonatomic, assign) xpc_object_t configurationRequest;
+@property (nonatomic, strong, nullable) UIWindow *overlayWindow;
+@property (nonatomic, strong, nullable) id floatingButton; // LCOSFloatingButton
+@property (nonatomic, strong, nullable) id launcherView;   // LCOSLauncherView
+@property (nonatomic, assign) BOOL isLauncherVisible;
 
-+ (instancetype)initWithUUID:(NSUUID *)identifier configuration:(NSDictionary *)configuration;
-
-/// 启动插件服务端（XPC 监听）
-+ (void)startServer;
-
-/// 拿到某个 pid 对应的会话
-+ (nullable LCOSCore *)processWithPID:(pid_t)pid;
-
-/// 把待处理的连接与请求配给会话
-+ (void)resolvePendingRequests;
-
-- (void)deliverConfiguration;
-- (void)failWithError:(NSError *)error;
++ (instancetype)sharedInstance;
+- (void)initialize;
+- (void)showLauncher;
+- (void)hideLauncher;
+- (void)toggleLauncher;
+- (void)showFloatingButton;
+- (void)hideFloatingButton;
 
 @end
 

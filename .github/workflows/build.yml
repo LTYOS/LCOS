@@ -66,7 +66,7 @@ jobs:
             -fobjc-arc \
             -fmodules \
             -I. \
-            -ICore -IUI -IGestures -ISettings -IBackground \
+            -ICore -IUI -IGestures -ISettings \
             -framework Foundation \
             -framework UIKit \
             -framework CoreGraphics \
@@ -74,7 +74,7 @@ jobs:
             -framework UserNotifications \
             -framework CoreFoundation \
             -o LCOS.dylib \
-            Core/*.m UI/*.m Gestures/*.m Settings/*.m Background/*.m \
+            Core/*.m UI/*.m Gestures/*.m Settings/*.m \
             -undefined dynamic_lookup
 
       - name: Package artifacts
