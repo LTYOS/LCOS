@@ -6,6 +6,7 @@
 #import "LCOSCore.h"
 #import "LCOSFloatingButton.h"
 #import "LCOSLauncherView.h"
+#import "LCOSGestureHandler.h"
 #import "LCOSLogManager.h"
 
 static LCOSCore *_sharedInstance = nil;
@@ -80,6 +81,12 @@ static LCOSCore *_sharedInstance = nil;
     }
     
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: initialize COMPLETE"];
+    
+    // Register gesture recognizers (three-finger long press for settings)
+    [LCOSGestureHandler registerGestureRecognizers];
+    
+    // Show floating button
+    [self showFloatingButton];
 }
 
 - (void)showLauncher {
