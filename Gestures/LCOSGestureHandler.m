@@ -107,6 +107,7 @@
 }
 
 - (void)handleEdgeGesture:(UIScreenEdgePanGestureRecognizer *)gesture {
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Gesture: handleEdgeGesture state=%ld", (long)gesture.state]];
     if (gesture.state == UIGestureRecognizerStateRecognized) {
         [self handleLeftEdgeGesture];
     }

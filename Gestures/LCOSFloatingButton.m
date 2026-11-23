@@ -25,11 +25,17 @@
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: initWithFrame ENTRY")];
     self = [super initWithFrame:frame];
     if (self) {
         [self setupButton];
     }
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: initWithFrame EXIT self=%@", self]];
     return self;
+}
+
+- (void)dealloc {
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: dealloc called")];
 }
 
 - (void)setupButton {
@@ -63,7 +69,12 @@
 }
 
 - (void)showOnWindow:(UIWindow *)window {
-    if (!window || self.superview == window) return;
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: showOnWindow called, window=%@", window]];
+    
+    if (!window || self.superview == window) {
+        [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: showOnWindow - early return")];
+        return;
+    }
     
     // Remove from previous window if any
     [self removeFromSuperview];
@@ -96,10 +107,16 @@
 }
 
 - (void)handleTap:(UIButton *)sender {
-    if (self.isDragging) return; // Don't toggle if was dragging
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleTap ENTRY")];
     
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Tapped")];
+    if (self.isDragging) {
+        [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleTap - isDragging true, return")];
+        return;
+    }
+    
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Tapped, calling toggleLauncher")];
     [self toggleLauncher];
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleTap EXIT")];
 }
 
 - (void)handleDragStart:(UIButton *)sender withEvent:(UIEvent *)event {
