@@ -54,14 +54,14 @@
     self.tintColor = [UIColor whiteColor];
     self.imageEdgeInsets = UIEdgeInsetsMake(15, 15, 15, 15);
     
-    // Touch events
+    // Touch events - use correct selector signatures matching method signatures
     [self addTarget:self action:@selector(handleTap:) forControlEvents:UIControlEventTouchUpInside];
-    [self addTarget:self action:@selector(handleDragStart:) forControlEvents:UIControlEventTouchDown];
-    [self addTarget:self action:@selector(handleDragMove:) forControlEvents:UIControlEventTouchDragInside];
-    [self addTarget:self action:@selector(handleDragMove:) forControlEvents:UIControlEventTouchDragOutside];
-    [self addTarget:self action:@selector(handleDragEnd:) forControlEvents:UIControlEventTouchUpInside];
-    [self addTarget:self action:@selector(handleDragEnd:) forControlEvents:UIControlEventTouchUpOutside];
-    [self addTarget:self action:@selector(handleDragEnd:) forControlEvents:UIControlEventTouchCancel];
+    [self addTarget:self action:@selector(handleDragStart:forEvent:) forControlEvents:UIControlEventTouchDown];
+    [self addTarget:self action:@selector(handleDragMove:forEvent:) forControlEvents:UIControlEventTouchDragInside];
+    [self addTarget:self action:@selector(handleDragMove:forEvent:) forControlEvents:UIControlEventTouchDragOutside];
+    [self addTarget:self action:@selector(handleDragEnd:forEvent:) forControlEvents:UIControlEventTouchUpInside];
+    [self addTarget:self action:@selector(handleDragEnd:forEvent:) forControlEvents:UIControlEventTouchUpOutside];
+    [self addTarget:self action:@selector(handleDragEnd:forEvent:) forControlEvents:UIControlEventTouchCancel];
     
     // Initially hidden
     self.hidden = YES;
@@ -158,7 +158,7 @@
     return NO;
 }
 
-- (void)handleDragStart:(UIButton *)sender withEvent:(UIEvent *)event {
+- (void)handleDragStart:(UIButton *)sender forEvent:(UIEvent *)event {
     [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleDragStart ENTRY")];
     UITouch *touch = [[event allTouches] anyObject];
     if (touch) {
@@ -168,7 +168,7 @@
     [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleDragStart EXIT")];
 }
 
-- (void)handleDragMove:(UIButton *)sender withEvent:(UIEvent *)event {
+- (void)handleDragMove:(UIButton *)sender forEvent:(UIEvent *)event {
     [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleDragMove ENTRY")];
     UITouch *touch = [[event allTouches] anyObject];
     if (!touch) {
@@ -199,7 +199,7 @@
     [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleDragMove EXIT")];
 }
 
-- (void)handleDragEnd:(UIButton *)sender withEvent:(UIEvent *)event {
+- (void)handleDragEnd:(UIButton *)sender forEvent:(UIEvent *)event {
     [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleDragEnd ENTRY")];
     if (self.isDragging) {
         [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Drag ended")];
