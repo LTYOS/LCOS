@@ -11,15 +11,19 @@
 #import "LCOSGestureHandler.h"
 #import <mach/mach.h>
 
+// Global flag to track if plugin is initialized
+static BOOL LCOSPluginInitialized = NO;
+
 // Constructor entry point - guaranteed to run when dylib is loaded
 __attribute__((constructor))
 static void LCOSPluginConstructor(void) {
-    // Force log to verify dylib is loaded and executing
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS Plugin: Constructor called - dylib loaded")];
+    // Just mark as initialized - NO logging here to avoid early crashes
+    LCOSPluginInitialized = YES;
     
-    // Defer all UIKit operations to main queue after app is ready
+    // Defer all initialization to main queue after app is ready
     dispatch_async(dispatch_get_main_queue(), ^{
         @autoreleasepool {
+            // Initialize logging first
             [[LCOSLogManager sharedManager] forceLog:@("LCOS Plugin: Main queue init started")];
             
             // Start XPC server (will handle bootstrap failure gracefully)
@@ -31,8 +35,6 @@ static void LCOSPluginConstructor(void) {
             [[LCOSLogManager sharedManager] forceLog:@("LCOS Plugin: Main queue init complete")];
         }
     });
-    
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS Plugin: Constructor queued main init")];
 }
 
 // Also provide +load as backup (in case constructor doesn't work)

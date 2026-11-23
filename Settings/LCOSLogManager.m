@@ -1,7 +1,7 @@
 //
 //  LCOSLogManager.m
 //  LCOS.dylib
-//  Based on LCOrbit logging architecture
+//  Simplified, robust logging based on LCOrbit architecture
 //
 
 #import "LCOSLogManager.h"
@@ -17,7 +17,6 @@ static const NSUInteger kLogLimit = 262144; // 256KB
 @property (nonatomic, strong) NSString *logDirectory;
 @property (nonatomic, strong) NSString *runtimeLogPath;
 @property (nonatomic, strong) NSString *runtimeOldPath;
-@property (nonatomic, strong) NSString *lockPath;
 @end
 
 @implementation LCOSLogManager
@@ -51,14 +50,10 @@ static LCOSLogManager *_sharedInstance = nil;
     self.logDirectory = [rootPath stringByAppendingPathComponent:@"logs"];
     self.runtimeLogPath = [self.logDirectory stringByAppendingPathComponent:@"runtime.json"];
     self.runtimeOldPath = [self.runtimeLogPath.stringByDeletingPathExtension stringByAppendingString:@".old.json"];
-    self.lockPath = [self.runtimeLogPath stringByAppendingString:@".lock"];
     
-    // Ensure directory exists
+    // Ensure directory exists synchronously
     NSFileManager *fm = [NSFileManager defaultManager];
     [fm createDirectoryAtPath:self.logDirectory withIntermediateDirectories:YES attributes:nil error:nil];
-    
-    // Force write a test log to verify path works
-    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS LogManager initialized at: %@", rootPath]];
 }
 
 - (NSString *)logRootPath {
@@ -74,9 +69,9 @@ static LCOSLogManager *_sharedInstance = nil;
     // Fallback to Documents/LCOS
     NSArray *docPaths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     if (docPaths.count > 0) {
-        NSString *path = [docPaths[0] stringByAppendingPathComponent:@"LCOS/logs"];
+        NSString *path = [docPaths[0] stringByAppendingPathComponent:@"LCOS"];
         [fm createDirectoryAtPath:path withIntermediateDirectories:YES attributes:nil error:nil];
-        return [docPaths[0] stringByAppendingPathComponent:@"LCOS"];
+        return path;
     }
     
     // Last resort: /tmp/LCOS
@@ -95,7 +90,6 @@ static LCOSLogManager *_sharedInstance = nil;
 }
 
 - (int)lockFile:(NSString *)path {
-    // Validate parent directory first
     NSString *lockPath = [path stringByAppendingString:@".lock"];
     if (![self ensureDirectory:[lockPath stringByDeletingLastPathComponent]]) {
         return -1;
@@ -108,11 +102,6 @@ static LCOSLogManager *_sharedInstance = nil;
         return -1;
     }
     return descriptor;
-}
-
-- (void)unlockFile:(int)descriptor {
-    flock(descriptor, LOCK_UN);
-    close(descriptor);
 }
 
 - (NSMutableArray *)readEventsFromPath:(NSString *)path {
@@ -232,8 +221,6 @@ static LCOSLogManager *_sharedInstance = nil;
 + (void)forceLog:(NSString *)message {
     LCOSLogManager *manager = [LCOSLogManager sharedManager];
     [manager writeLogInternal:@"force" details:@{@"message": message}];
-    // Also write immediately to ensure it's on disk
-    [manager writeLogInternal:@"force-immediate" details:@{@"message": message}];
 }
 
 + (void)clearLogs {
@@ -246,11 +233,8 @@ static LCOSLogManager *_sharedInstance = nil;
             @try {
                 NSData *emptyData = [manager encodeEvents:@[]];
                 if ([emptyData writeToFile:manager.runtimeLogPath atomically:YES]) {
-                    // Mark as cleared
-                    [NSData.data writeToFile:[manager.runtimeLogPath stringByAppendingString:@".cleared"] atomically:YES];
                     NSFileManager *fm = [NSFileManager defaultManager];
                     [fm removeItemAtPath:[manager oldPathForPath:manager.runtimeLogPath] error:nil];
-                    [fm removeItemAtPath:[manager.runtimeLogPath.stringByDeletingPathExtension stringByAppendingString:@".corrupt.json"] error:nil];
                 }
             } @finally {
                 flock(descriptor, LOCK_UN);
