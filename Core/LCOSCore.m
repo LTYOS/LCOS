@@ -10,22 +10,19 @@
 #import "LCOSLogManager.h"
 
 static LCOSCore *_sharedInstance = nil;
-static BOOL _initialized = NO;
 
 @implementation LCOSCore
 
 + (void)load {
     [[LCOSLogManager sharedManager] forceLog:@"LCOS load: +load invoked"];
-    // Don't initialize immediately - wait for app to be ready
-    // Schedule initialization for next runloop
-    dispatch_async(dispatch_get_main_queue(), ^{
-        // Prevent double initialization
-        if (!_initialized) {
+    // Use dispatch_once to ensure initialization runs exactly once
+    static dispatch_once_t initializationToken;
+    dispatch_once(&initializationToken, ^{
+        // Don't initialize immediately - wait for app to be ready
+        dispatch_async(dispatch_get_main_queue(), ^{
             [[LCOSCore sharedInstance] initialize];
             [[LCOSLogManager sharedManager] forceLog:@"LCOS load: delayed initialize complete"];
-        } else {
-            [[LCOSLogManager sharedManager] forceLog:@"LCOS load: already initialized, skipping"];
-        }
+        });
     });
 }
 
@@ -56,12 +53,6 @@ static BOOL _initialized = NO;
 
 - (void)initialize {
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: initialize START"];
-    
-    // Prevent re-initialization if already done
-    if (_initialized) {
-        [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: already initialized, skipping"];
-        return;
-    }
     
     // Check if window scene is ready
     if (![self hasValidWindowScene]) {
@@ -108,7 +99,6 @@ static BOOL _initialized = NO;
     }
     
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: initialize COMPLETE"];
-    _initialized = YES;
     
     // Register gesture recognizers (three-finger long press for settings)
     [LCOSGestureHandler registerGestureRecognizers];
