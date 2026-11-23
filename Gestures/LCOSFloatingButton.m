@@ -114,15 +114,6 @@
     return [super hitTest:point withEvent:event];
 }
 
-// UIGestureRecognizerDelegate - ensure button receives touches
-- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
-    // Allow all touches on the button itself
-    if (touch.view == self || [touch.view isDescendantOfView:self]) {
-        return YES;
-    }
-    return NO;
-}
-
 - (void)hide {
     [UIView animateWithDuration:0.2 animations:^{
         self.alpha = 0.0;
