@@ -15,10 +15,12 @@ static LCOSCore *_sharedInstance = nil;
 
 + (void)load {
     [[LCOSLogManager sharedManager] forceLog:@"LCOS load: +load invoked"];
-    [LCOSCore sharedInstance];
-    // Initialize the core (overlay window, floating button) immediately
-    [[LCOSCore sharedInstance] initialize];
-    [[LCOSLogManager sharedManager] forceLog:@"LCOS load: initialize complete"];
+    // Don't initialize immediately - wait for app to be ready
+    // Schedule initialization for next runloop
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[LCOSCore sharedInstance] initialize];
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS load: delayed initialize complete"];
+    });
 }
 
 + (instancetype)sharedInstance {
@@ -37,8 +39,26 @@ static LCOSCore *_sharedInstance = nil;
     return self;
 }
 
+- (BOOL)hasValidWindowScene {
+    if (@available(iOS 13.0, *)) {
+        UIScene *scene = [UIApplication sharedApplication].connectedScenes.anyObject;
+        UIWindowScene *windowScene = (UIWindowScene *)scene;
+        return windowScene != nil;
+    }
+    return YES; // iOS 12 always valid
+}
+
 - (void)initialize {
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: initialize START"];
+    
+    // Check if window scene is ready
+    if (![self hasValidWindowScene]) {
+        [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: No window scene yet, retrying in 1s"];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self initialize];
+        });
+        return;
+    }
     
     // Create overlay window (like LCOrbitOverlayManager)
     if (@available(iOS 13.0, *)) {
@@ -56,7 +76,7 @@ static LCOSCore *_sharedInstance = nil;
             rootVC.view.backgroundColor = [UIColor clearColor];
             self.overlayWindow.rootViewController = rootVC;
             
-            // Create floating button (but don't add yet - showFloatingButton will handle)
+            // Create floating button
             self.floatingButton = [LCOSFloatingButton sharedButton];
             
             [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSCore: overlayWindow created level=%ld", (long)self.overlayWindow.windowLevel]];
@@ -80,7 +100,7 @@ static LCOSCore *_sharedInstance = nil;
     // Register gesture recognizers (three-finger long press for settings)
     [LCOSGestureHandler registerGestureRecognizers];
     
-    // Show floating button (will add to rootVC.view and show window)
+    // Show floating button
     [self showFloatingButton];
 }
 
@@ -142,6 +162,15 @@ static LCOSCore *_sharedInstance = nil;
 
 - (void)showFloatingButton {
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: showFloatingButton"];
+    
+    if (!self.overlayWindow || !self.overlayWindow.rootViewController) {
+        [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: showFloatingButton - no overlayWindow/rootVC, retrying"];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self showFloatingButton];
+        });
+        return;
+    }
+    
     self.overlayWindow.hidden = NO;
     self.floatingButton.hidden = NO;
     [self.floatingButton showOnWindow:self.overlayWindow];
