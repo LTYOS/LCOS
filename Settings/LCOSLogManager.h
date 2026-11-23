@@ -2,17 +2,17 @@
 
 #import <Foundation/Foundation.h>
 
+NS_ASSUME_NONNULL_BEGIN
+
 @interface LCOSLogManager : NSObject
 
-@property (nonatomic, strong) NSString *logDirectory;
-@property (nonatomic, strong) NSString *logFilePath;
-@property (nonatomic, strong) NSString *containerLogDirectory;
-
 + (instancetype)sharedManager;
-- (void)setupLogDirectory;
 - (void)logError:(NSError *)error;
 - (void)logMessage:(NSString *)message level:(NSString *)level;
-- (void)writeLogLine:(NSString *)line;
-- (void)forceLog:(NSString *)message;
++ (void)forceLog:(NSString *)message;
++ (void)clearLogs;
++ (NSData *)exportLogsAsJSON;
 
 @end
+
+NS_ASSUME_NONNULL_END

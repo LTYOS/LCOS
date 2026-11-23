@@ -6,17 +6,39 @@
 #import "LCOSSettingsView.h"
 #import "LCOSLogManager.h"
 
+@interface LCOSSettingsView ()
+@property (nonatomic, strong) UILabel *titleLabel;
+@end
+
 @implementation LCOSSettingsView
 
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor systemBackgroundColor];
     
-    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 60, self.view.frame.size.width, 40)];
-    titleLabel.text = @"LCOS 设置";
-    titleLabel.textAlignment = NSTextAlignmentCenter;
-    titleLabel.font = [UIFont boldSystemFontOfSize:24];
-    [self.view addSubview:titleLabel];
+    self.titleLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+    self.titleLabel.text = @"LCOS 设置";
+    self.titleLabel.textAlignment = NSTextAlignmentCenter;
+    self.titleLabel.font = [UIFont boldSystemFontOfSize:24];
+    self.titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:self.titleLabel];
+    
+    [NSLayoutConstraint activateConstraints:@[
+        [self.titleLabel.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [self.titleLabel.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:20],
+    ]];
+    
+    // Add a close button
+    UIButton *closeButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    closeButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [closeButton setTitle:@"关闭" forState:UIControlStateNormal];
+    [closeButton addTarget:self action:@selector(closeTapped:) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:closeButton];
+    
+    [NSLayoutConstraint activateConstraints:@[
+        [closeButton.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-20],
+        [closeButton.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:20],
+    ]];
     
     // Settings items placeholder
     // 1. 手势灵敏度调整
@@ -24,11 +46,22 @@
     // 3. 日志开关
     // 4. 应用图标布局
     
-    [self logSettingsAccess];
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS Settings viewDidLoad")];
 }
 
-- (void)logSettingsAccess {
-    [[LCOSLogManager sharedManager] logMessage:@"用户进入 LCOS 设置页面" level:@"INFO"];
+- (void)closeTapped:(UIButton *)sender {
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS Settings close tapped")];
+    [self dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS Settings viewDidAppear")];
+}
+
+- (void)viewWillDisappear:(BOOL)animated {
+    [super viewWillDisappear:animated];
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS Settings viewWillDisappear")];
 }
 
 @end
