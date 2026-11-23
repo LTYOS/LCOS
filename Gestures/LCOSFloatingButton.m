@@ -42,7 +42,7 @@
     // Button appearance - circular floating button
     self.backgroundColor = [UIColor systemBlueColor];
     self.layer.cornerRadius = 30;
-    self.layer.masksToBounds = YES;
+    // IMPORTANT: NO clipsToBounds/masksToBounds - it clips touch area!
     self.layer.shadowColor = [UIColor blackColor].CGColor;
     self.layer.shadowOffset = CGSizeMake(0, 2);
     self.layer.shadowOpacity = 0.3;
@@ -66,6 +66,10 @@
     // Initially hidden
     self.hidden = YES;
     self.alpha = 0.0;
+    
+    // Ensure button receives touches
+    self.userInteractionEnabled = YES;
+    self.exclusiveTouch = YES;
 }
 
 - (void)showOnWindow:(UIWindow *)window {
@@ -98,6 +102,25 @@
     self.exclusiveTouch = YES;
     
     [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Shown on window")];
+}
+
+// Expand touchable area beyond visual bounds
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    // Expand hit test area by 20pt in all directions
+    CGRect expandedBounds = CGRectInset(self.bounds, -20, -20);
+    if (CGRectContainsPoint(expandedBounds, point)) {
+        return self;
+    }
+    return [super hitTest:point withEvent:event];
+}
+
+// UIGestureRecognizerDelegate - ensure button receives touches
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
+    // Allow all touches on the button itself
+    if (touch.view == self || [touch.view isDescendantOfView:self]) {
+        return YES;
+    }
+    return NO;
 }
 
 - (void)hide {

@@ -113,6 +113,25 @@
     }
 }
 
+// UIGestureRecognizerDelegate - prevent window gestures from intercepting floating button touches
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
+    // Don't intercept touches on the floating button
+    LCOSFloatingButton *floatingButton = [LCOSFloatingButton sharedButton];
+    if (touch.view == floatingButton || [touch.view isDescendantOfView:floatingButton]) {
+        return NO;
+    }
+    return YES;
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+    // Allow simultaneous recognition with button's internal gestures
+    LCOSFloatingButton *floatingButton = [LCOSFloatingButton sharedButton];
+    if (otherGestureRecognizer.view == floatingButton || [otherGestureRecognizer.view isDescendantOfView:floatingButton]) {
+        return YES;
+    }
+    return NO;
+}
+
 - (void)handleThreeFingerLongPress {
     [[LCOSLogManager sharedManager] forceLog:@("LCOS Gesture: Three finger long press - showing settings")];
     
