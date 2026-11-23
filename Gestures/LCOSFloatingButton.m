@@ -242,7 +242,6 @@
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: launcher=%@", self.launcher]];
     
     // Force fullscreen presentation before presenting
-    [[LCOSLogManager sharedManager] forceLog(@("LCOS FloatingButton: Setting rootVC modalPresentationStyle=FullScreen"));
     UIWindow *rootWindow = [UIApplication sharedApplication].keyWindow;
     if (!rootWindow) rootWindow = [[UIApplication sharedApplication] windows].firstObject;
     if (rootWindow.rootViewController) {
@@ -256,11 +255,9 @@
         UIWindowScene *windowScene = (UIWindowScene *)scene;
         UIWindow *window = windowScene ? windowScene.windows.firstObject : nil;
         if (!window) {
-            [[LCOSLogManager sharedManager] forceLog(@("LCOS FloatingButton: No window"));
             return;
         }
         if (!window.rootViewController) {
-            [[LCOSLogManager sharedManager] forceLog(@("LCOS FloatingButton: No rootViewController"));
             return;
         }
         
@@ -269,13 +266,11 @@
         
         if (self.launcher.presentedViewController || self.launcher.isBeingPresented || self.launcher.isBeingDismissed) {
             // Dismiss - ensure we wait for completion before allowing re-present
-            [[LCOSLogManager sharedManager] forceLog(@("LCOS FloatingButton: Dismissing launcher"));
             [self.launcher dismissViewControllerAnimated:YES completion:^{
                 [[LCOSLogManager sharedManager] forceLog(@("LCOS FloatingButton: Dismissed launcher completion"));
             }];
         } else {
             // Present - ensure modalPresentationStyle is set on rootVC before presenting
-            [[LCOSLogManager sharedManager] forceLog(@("LCOS FloatingButton: Presenting launcher with FullScreen style"));
             [window.rootViewController presentViewController:self.launcher animated:YES completion:^{
                 [[LCOSLogManager sharedManager] forceLog(@("LCOS FloatingButton: Presented launcher completion"));
             }];
