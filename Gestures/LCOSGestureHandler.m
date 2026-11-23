@@ -36,14 +36,20 @@
     self = [super init];
     if (self) {
         _sharedLauncher = [[LCOSLauncherView alloc] init];
-        _hostWindow = [UIApplication sharedApplication].connectedScenes.anyObject;
-        _hostWindow = _hostWindow ? _hostWindow.windows.firstObject : nil;
-        [self setupGestureRecognizers];
+        // Don't setup gestures here - will be called from registerGestureRecognizers after window is ready
     }
     return self;
 }
 
+- (void)ensureHostWindow {
+    if (!_hostWindow) {
+        UIWindowScene *windowScene = [UIApplication sharedApplication].connectedScenes.anyObject;
+        _hostWindow = windowScene ? windowScene.windows.firstObject : nil;
+    }
+}
+
 - (void)setupGestureRecognizers {
+    [self ensureHostWindow];
     if (!_hostWindow) {
         [[LCOSLogManager sharedManager] forceLog:@("LCOS Gesture: No host window found, will retry")];
         // Retry after a short delay
@@ -142,8 +148,9 @@
 }
 
 + (void)registerGestureRecognizers {
-    // Called from constructor - ensures shared handler is created
-    [LCOSGestureHandler sharedHandler];
+    // Called from constructor - ensures shared handler is created and gestures registered
+    LCOSGestureHandler *handler = [LCOSGestureHandler sharedHandler];
+    [handler setupGestureRecognizers];
 }
 
 @end

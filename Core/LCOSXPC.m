@@ -171,55 +171,54 @@ static NSMutableDictionary<NSNumber *, LCOSCore *> *_processesByPID = nil;
     
     xpc_connection_resume(_listener);
     
-    // Bootstrap setup for Mach service
+    // Bootstrap setup for Mach service (may fail in sandbox - that's OK)
     NSString *appGroup = LCOSConfig.appGroupID;
     NSString *serviceName = [NSString stringWithFormat:@"%@.LCOS.%d", appGroup, getpid()];
     mach_port_t service = MACH_PORT_NULL;
     kern_return_t kr = bootstrap_check_in(mach_task_self(), [serviceName UTF8String], &service);
     
     if (kr != KERN_SUCCESS || !MACH_PORT_VALID(service)) {
-        NSString *errorDesc = [NSString stringWithFormat:@"Unable to register bootstrap service (%d)", (int)kr];
-        [[LCOSLogManager sharedManager] logError:[NSError errorWithDomain:@"LCOSXPC" code:1 userInfo:@{NSLocalizedDescriptionKey: errorDesc}]];
-        return;
-    }
-    
-    // Create bootstrap source
-    xpc_endpoint_t endpoint = xpc_endpoint_create(_listener);
-    _bootstrapSource = endpoint ? dispatch_source_create(DISPATCH_SOURCE_TYPE_MACH_RECV, service, 0, NULL) : nil;
-    
-    if (!_bootstrapSource) {
-        xpc_connection_cancel(_listener);
-        _listener = nil;
-        mach_port_mod_refs(mach_task_self(), service, MACH_PORT_RIGHT_RECEIVE, -1);
-        [[LCOSLogManager sharedManager] logError:[NSError errorWithDomain:@"LCOSXPC" code:5 userInfo:@{NSLocalizedDescriptionKey: @"Unable to create bootstrap source"}]];
-        return;
-    }
-    
-    dispatch_source_set_event_handler(_bootstrapSource, ^(void) {
-        xpc_object_t request = nil;
-        int error = xpc_pipe_receive(service, &request, 0);
-        if (error || !request || xpc_get_type(request) != XPC_TYPE_DICTIONARY) return;
+        NSString *errorDesc = [NSString stringWithFormat:@"Bootstrap check_in failed (%d) - sandbox limitation, XPC server will run without bootstrap", (int)kr];
+        [[LCOSLogManager sharedManager] logMessage:errorDesc level:@"WARN"];
+        // Don't return - continue with listener-only mode
+    } else {
+        // Create bootstrap source
+        xpc_endpoint_t endpoint = xpc_endpoint_create(_listener);
+        _bootstrapSource = endpoint ? dispatch_source_create(DISPATCH_SOURCE_TYPE_MACH_RECV, service, 0, NULL) : nil;
         
-        xpc_object_t reply = xpc_dictionary_create_reply(request);
-        if (!reply) return;
-        
-        audit_token_t audit = {{0}};
-        xpc_dictionary_get_audit_token(request, &audit);
-        
-        if (audit.val[5] && xpc_dictionary_get_int64(request, "cmd") == LCOSXPCCommandConnect) {
-            xpc_dictionary_set_value(reply, "listener", endpoint);
+        if (!_bootstrapSource) {
+            xpc_connection_cancel(_listener);
+            _listener = nil;
+            mach_port_mod_refs(mach_task_self(), service, MACH_PORT_RIGHT_RECEIVE, -1);
+            [[LCOSLogManager sharedManager] logError:[NSError errorWithDomain:@"LCOSXPC" code:5 userInfo:@{NSLocalizedDescriptionKey: @"Unable to create bootstrap source"}]];
         } else {
-            xpc_dictionary_set_string(reply, "error", "Invalid LCOS connection request");
+            dispatch_source_set_event_handler(_bootstrapSource, ^(void) {
+                xpc_object_t request = nil;
+                int error = xpc_pipe_receive(service, &request, 0);
+                if (error || !request || xpc_get_type(request) != XPC_TYPE_DICTIONARY) return;
+                
+                xpc_object_t reply = xpc_dictionary_create_reply(request);
+                if (!reply) return;
+                
+                audit_token_t audit = {{0}};
+                xpc_dictionary_get_audit_token(request, &audit);
+                
+                if (audit.val[5] && xpc_dictionary_get_int64(request, "cmd") == LCOSXPCCommandConnect) {
+                    xpc_dictionary_set_value(reply, "listener", endpoint);
+                } else {
+                    xpc_dictionary_set_string(reply, "error", "Invalid LCOS connection request");
+                }
+                
+                xpc_pipe_routine_reply(reply);
+            });
+            
+            dispatch_source_set_cancel_handler(_bootstrapSource, ^{
+                mach_port_mod_refs(mach_task_self(), service, MACH_PORT_RIGHT_RECEIVE, -1);
+            });
+            
+            dispatch_resume(_bootstrapSource);
         }
-        
-        xpc_pipe_routine_reply(reply);
-    });
-    
-    dispatch_source_set_cancel_handler(_bootstrapSource, ^{
-        mach_port_mod_refs(mach_task_self(), service, MACH_PORT_RIGHT_RECEIVE, -1);
-    });
-    
-    dispatch_resume(_bootstrapSource);
+    }
 }
 
 @end
