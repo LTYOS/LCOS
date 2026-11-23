@@ -13,7 +13,7 @@
 @interface ThreeFingerPanGestureRecognizer : UIPanGestureRecognizer
 @end
 
-@interface LCOSGestureHandler ()
+@interface LCOSGestureHandler () <UIGestureRecognizerDelegate>
 @property (nonatomic, strong) LCOSLauncherView *sharedLauncher;
 @property (nonatomic, strong) ThreeFingerPanGestureRecognizer *panGesture;
 @property (nonatomic, strong) UILongPressGestureRecognizer *longPressGesture;
@@ -90,7 +90,7 @@
     [[LCOSLogManager sharedManager] forceLog:@("LCOS Gesture: Three finger swipe up - showing launcher")];
     
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindowScene *windowScene = [UIApplication sharedApplication].connectedScenes.firstObject;
+        UIWindowScene *windowScene = [UIApplication sharedApplication].connectedScenes.anyObject;
         UIWindow *window = windowScene.windows.firstObject;
         if (window && window.rootViewController) {
             [window.rootViewController presentViewController:_sharedLauncher animated:YES completion:nil];
@@ -113,7 +113,7 @@
     
     dispatch_async(dispatch_get_main_queue(), ^{
         LCOSSettingsView *settingsView = [[LCOSSettingsView alloc] initWithNibName:nil bundle:nil];
-        UIWindowScene *windowScene = [UIApplication sharedApplication].connectedScenes.firstObject;
+        UIWindowScene *windowScene = [UIApplication sharedApplication].connectedScenes.anyObject;
         UIWindow *window = windowScene.windows.firstObject;
         if (window && window.rootViewController) {
             [window.rootViewController presentViewController:settingsView animated:YES completion:nil];
@@ -134,9 +134,6 @@
 @end
 
 // Custom 3-finger pan gesture recognizer
-@interface ThreeFingerPanGestureRecognizer : UIPanGestureRecognizer
-@end
-
 @implementation ThreeFingerPanGestureRecognizer
 
 - (BOOL)canBePreventedByGestureRecognizer:(UIGestureRecognizer *)preventingGestureRecognizer {
@@ -167,18 +164,6 @@
 
 - (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
     [super touchesCancelled:touches withEvent:event];
-}
-
-@end
-
-// Gesture recognizer delegate
-@interface LCOSGestureHandler () <UIGestureRecognizerDelegate>
-@end
-
-@implementation LCOSGestureHandler (GestureDelegate)
-
-- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
-    return YES;
 }
 
 @end
