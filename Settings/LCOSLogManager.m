@@ -188,29 +188,6 @@ static LCOSLogManager *_sharedInstance = nil;
     }
 }
 
-- (NSDictionary *)createEvent:(NSString *)event details:(id)details {
-    NSISO8601DateFormatter *format = [[NSISO8601DateFormatter alloc] init];
-    NSString *guestID = @"LCOS-Guest";
-    
-    NSMutableDictionary *record = [@{
-        @"timestamp": [format stringFromDate:[NSDate date]],
-        @"guestID": guestID,
-        @"context": @"guest",
-        @"pid": @(getpid()),
-        @"event": [event isKindOfClass:[NSString class]] ? event : @"unknown"
-    } mutableCopy];
-    
-    if (details) {
-        record[@"details"] = details;
-    }
-    
-    if (![NSJSONSerialization isValidJSONObject:record]) {
-        record[@"details"] = [details description] ?: @"";
-    }
-    
-    return record;
-}
-
 - (void)logError:(NSError *)error {
     [self writeLogInternal:@"error" details:@{@"domain": error.domain, @"code": @(error.code), @"description": error.localizedDescription}];
 }
