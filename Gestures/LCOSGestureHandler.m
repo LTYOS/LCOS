@@ -9,9 +9,13 @@
 #import "LCOSLogManager.h"
 #import <UIKit/UIKit.h>
 
+// Forward declaration for custom gesture recognizer
+@interface ThreeFingerPanGestureRecognizer : UIPanGestureRecognizer
+@end
+
 @interface LCOSGestureHandler ()
 @property (nonatomic, strong) LCOSLauncherView *sharedLauncher;
-@property (nonatomic, strong) UIPanGestureRecognizer *panGesture;
+@property (nonatomic, strong) ThreeFingerPanGestureRecognizer *panGesture;
 @property (nonatomic, strong) UILongPressGestureRecognizer *longPressGesture;
 @property (nonatomic, strong) UIScreenEdgePanGestureRecognizer *edgeGesture;
 @end
