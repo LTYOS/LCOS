@@ -101,17 +101,26 @@
     self.userInteractionEnabled = YES;
     self.exclusiveTouch = YES;
     
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Shown on window")];
+    // Log layer info for debugging
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: Shown on window, frame=%@, superview=%@, layer.zPosition=%.0f", NSStringFromCGRect(self.frame), self.superview, self.layer.zPosition]];
+    
+    // Force to topmost layer
+    self.layer.zPosition = CGFLOAT_MAX;
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: layer.zPosition set to MAX=%.0f", self.layer.zPosition]];
 }
 
 // Expand touchable area beyond visual bounds
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: hitTest point=(%.0f,%.0f) bounds=%@", point.x, point.y, NSStringFromCGRect(self.bounds)]];
     // Expand hit test area by 20pt in all directions
     CGRect expandedBounds = CGRectInset(self.bounds, -20, -20);
     if (CGRectContainsPoint(expandedBounds, point)) {
+        [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: hitTest -> self (expanded)")];
         return self;
     }
-    return [super hitTest:point withEvent:event];
+    UIView *result = [super hitTest:point withEvent:event];
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: hitTest -> %@", result ?: @"nil"]];
+    return result;
 }
 
 - (void)hide {
@@ -139,24 +148,33 @@
 
 // UIGestureRecognizerDelegate - ensure button receives touches
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: shouldReceiveTouch gesture=%@ touchView=%@", gestureRecognizer, touch.view]];
     // Allow all touches on the button itself
     if (touch.view == self || [touch.view isDescendantOfView:self]) {
+        [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: shouldReceiveTouch -> YES")];
         return YES;
     }
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: shouldReceiveTouch -> NO")];
     return NO;
 }
 
 - (void)handleDragStart:(UIButton *)sender withEvent:(UIEvent *)event {
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleDragStart ENTRY")];
     UITouch *touch = [[event allTouches] anyObject];
     if (touch) {
         self.initialTouchPoint = [touch locationInView:self];
         self.isDragging = NO;
     }
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleDragStart EXIT")];
 }
 
 - (void)handleDragMove:(UIButton *)sender withEvent:(UIEvent *)event {
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleDragMove ENTRY")];
     UITouch *touch = [[event allTouches] anyObject];
-    if (!touch) return;
+    if (!touch) {
+        [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleDragMove - no touch")];
+        return;
+    }
     
     CGPoint currentPoint = [touch locationInView:self];
     CGFloat dx = currentPoint.x - self.initialTouchPoint.x;
@@ -178,13 +196,16 @@
         
         self.center = newCenter;
     }
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleDragMove EXIT")];
 }
 
 - (void)handleDragEnd:(UIButton *)sender withEvent:(UIEvent *)event {
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleDragEnd ENTRY")];
     if (self.isDragging) {
         [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: Drag ended")];
     }
     self.isDragging = NO;
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: handleDragEnd EXIT")];
 }
 
 - (void)toggleLauncher {

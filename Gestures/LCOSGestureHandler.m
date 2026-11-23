@@ -115,20 +115,26 @@
 
 // UIGestureRecognizerDelegate - prevent window gestures from intercepting floating button touches
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS GestureHandler: shouldReceiveTouch gesture=%@ touchView=%@", gestureRecognizer, touch.view]];
     // Don't intercept touches on the floating button
     LCOSFloatingButton *floatingButton = [LCOSFloatingButton sharedButton];
     if (touch.view == floatingButton || [touch.view isDescendantOfView:floatingButton]) {
+        [[LCOSLogManager sharedManager] forceLog:@("LCOS GestureHandler: shouldReceiveTouch -> NO (button touch)")];
         return NO;
     }
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS GestureHandler: shouldReceiveTouch -> YES")];
     return YES;
 }
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS GestureHandler: shouldRecognizeSimultaneously gesture=%@ other=%@", gestureRecognizer, otherGestureRecognizer]];
     // Allow simultaneous recognition with button's internal gestures
     LCOSFloatingButton *floatingButton = [LCOSFloatingButton sharedButton];
     if (otherGestureRecognizer.view == floatingButton || [otherGestureRecognizer.view isDescendantOfView:floatingButton]) {
+        [[LCOSLogManager sharedManager] forceLog:@("LCOS GestureHandler: shouldRecognizeSimultaneously -> YES (button gesture)")];
         return YES;
     }
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS GestureHandler: shouldRecognizeSimultaneously -> NO")];
     return NO;
 }
 
