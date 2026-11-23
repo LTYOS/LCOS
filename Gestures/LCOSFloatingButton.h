@@ -11,5 +11,6 @@
 + (instancetype)sharedButton;
 - (void)showOnWindow:(UIWindow *)window;
 - (void)hide;
+- (void)toggleLauncher;
 
 @end

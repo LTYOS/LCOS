@@ -44,7 +44,8 @@
 
 - (void)ensureHostWindow {
     if (!_hostWindow) {
-        UIWindowScene *windowScene = [UIApplication sharedApplication].connectedScenes.anyObject;
+        UIScene *scene = [UIApplication sharedApplication].connectedScenes.anyObject;
+        UIWindowScene *windowScene = (UIWindowScene *)scene;
         _hostWindow = windowScene ? windowScene.windows.firstObject : nil;
     }
 }
@@ -112,7 +113,8 @@
     
     dispatch_async(dispatch_get_main_queue(), ^{
         LCOSSettingsView *settingsView = [[LCOSSettingsView alloc] initWithNibName:nil bundle:nil];
-        UIWindowScene *windowScene = [UIApplication sharedApplication].connectedScenes.anyObject;
+        UIScene *scene = [UIApplication sharedApplication].connectedScenes.anyObject;
+        UIWindowScene *windowScene = (UIWindowScene *)scene;
         UIWindow *window = windowScene.windows.firstObject;
         if (window && window.rootViewController) {
             [window.rootViewController presentViewController:settingsView animated:YES completion:nil];
