@@ -225,11 +225,10 @@
 }
 
 // Trace action sending
-- (BOOL)sendAction:(SEL)action to:(id)target forEvent:(UIEvent *)event {
+- (void)sendAction:(SEL)action to:(id)target forEvent:(UIEvent *)event {
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: sendAction action=%@ target=%@ event=%@", NSStringFromSelector(action), target, event]];
-    BOOL result = [super sendAction:action to:target forEvent:event];
-    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: sendAction result=%d", result]];
-    return result;
+    [super sendAction:action to:target forEvent:event];
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS FloatingButton: sendAction completed")];
 }
 
 - (void)toggleLauncher {
