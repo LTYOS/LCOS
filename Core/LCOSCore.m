@@ -8,6 +8,32 @@
 #import "LCOSLauncherView.h"
 #import "LCOSGestureHandler.h"
 #import "LCOSLogManager.h"
+#import <objc/runtime.h>
+
+// Pass-through window - like LCOrbitPassThroughWindow
+// Transparent regions pass touches to underlying windows
+@interface LCOSPassThroughWindow : UIWindow
+@end
+
+@implementation LCOSPassThroughWindow
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    if (!event || event.type == UIEventTypeTouches) {
+        [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSOverlayScreenTouchedNotification" object:nil];
+    }
+    UIView *target = [super hitTest:point withEvent:event];
+    // Pass through if touching empty area (self or root view)
+    return (target == self || target == self.rootViewController.view) ? nil : target;
+}
+@end
+
+// Launcher container view controller for proper child VC management
+@interface LCOSLauncherContainerVC : UIViewController
+@end
+
+@implementation LCOSLauncherContainerVC
+- (BOOL)shouldAutorotate { return YES; }
+- (UIInterfaceOrientationMask)supportedInterfaceOrientations { return UIInterfaceOrientationMaskAll; }
+@end
 
 static LCOSCore *_sharedInstance = nil;
 
@@ -63,12 +89,12 @@ static LCOSCore *_sharedInstance = nil;
         return;
     }
     
-    // Create overlay window (like LCOrbitOverlayManager)
+    // Create pass-through overlay window (like LCOrbitOverlayManager)
     if (@available(iOS 13.0, *)) {
         UIScene *scene = [UIApplication sharedApplication].connectedScenes.anyObject;
         UIWindowScene *windowScene = (UIWindowScene *)scene;
         if (windowScene) {
-            self.overlayWindow = [[UIWindow alloc] initWithWindowScene:windowScene];
+            self.overlayWindow = [[LCOSPassThroughWindow alloc] initWithWindowScene:windowScene];
             self.overlayWindow.frame = windowScene.coordinateSpace.bounds;
             self.overlayWindow.backgroundColor = [UIColor clearColor];
             self.overlayWindow.windowLevel = UIWindowLevelNormal + 100; // Above LiveContainer
@@ -86,7 +112,7 @@ static LCOSCore *_sharedInstance = nil;
         }
     } else {
         // iOS 12 fallback
-        self.overlayWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+        self.overlayWindow = [[LCOSPassThroughWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
         self.overlayWindow.backgroundColor = [UIColor clearColor];
         self.overlayWindow.windowLevel = UIWindowLevelNormal + 100;
         self.overlayWindow.hidden = YES;
@@ -98,13 +124,54 @@ static LCOSCore *_sharedInstance = nil;
         self.floatingButton = [LCOSFloatingButton sharedButton];
     }
     
-    [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: initialize COMPLETE"];
-    
-    // Register gesture recognizers (three-finger long press for settings)
-    [LCOSGestureHandler registerGestureRecognizers];
+    // Register gesture recognizers on overlay window (three-finger long press for settings)
+    [self registerGesturesOnOverlayWindow];
     
     // Show floating button
     [self showFloatingButton];
+    
+    [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: initialize COMPLETE"];
+}
+
+- (void)registerGesturesOnOverlayWindow {
+    // Register three-finger long press on overlay window too
+    if (!self.overlayWindow) return;
+    
+    UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc] 
+        initWithTarget:self action:@selector(handleThreeFingerLongPress:)];
+    longPress.numberOfTouchesRequired = 3;
+    longPress.minimumPressDuration = 1.0;
+    [self.overlayWindow addGestureRecognizer:longPress];
+    
+    [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Three-finger long press registered on overlay window"];
+}
+
+// Handle three-finger long press on overlay window
+- (void)handleThreeFingerLongPress:(UILongPressGestureRecognizer *)gesture {
+    if (gesture.state == UIGestureRecognizerStateBegan) {
+        [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Three finger long press on overlay - showing settings"];
+        
+        dispatch_async(dispatch_get_main_queue(), ^{
+            // Import at runtime to avoid circular dependency
+            Class settingsClass = NSClassFromString(@"LCOSSettingsView");
+            if (settingsClass) {
+                id settingsView = [settingsClass alloc];
+                if ([settingsView respondsToSelector:@selector(initWithNibName:bundle:)]) {
+                    settingsView = [settingsView initWithNibName:nil bundle:nil];
+                } else {
+                    settingsView = [settingsView init];
+                }
+                
+                UIScene *scene = [UIApplication sharedApplication].connectedScenes.anyObject;
+                UIWindowScene *windowScene = (UIWindowScene *)scene;
+                UIWindow *window = windowScene.windows.firstObject;
+                if (window && window.rootViewController) {
+                    [window.rootViewController presentViewController:settingsView animated:YES completion:nil];
+                    [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Settings presented from overlay"];
+                }
+            }
+        });
+    }
 }
 
 - (void)showLauncher {
@@ -118,18 +185,32 @@ static LCOSCore *_sharedInstance = nil;
     // Create launcher view if needed
     if (!self.launcherView) {
         self.launcherView = [[LCOSLauncherView alloc] init];
-        self.launcherView.view.frame = self.overlayWindow.rootViewController.view.bounds;
-        self.launcherView.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     }
     
-    // Add launcher to overlay window (on top of floating button)
-    [self.overlayWindow.rootViewController.view addSubview:self.launcherView.view];
-    [self.overlayWindow.rootViewController.view bringSubviewToFront:self.launcherView.view];
+    // Create container VC if needed
+    if (!self.launcherContainer) {
+        self.launcherContainer = [[LCOSLauncherContainerVC alloc] init];
+        self.launcherContainer.view.backgroundColor = [UIColor clearColor];
+        self.launcherContainer.view.frame = self.overlayWindow.rootViewController.view.bounds;
+        self.launcherContainer.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    }
+    
+    // Add launcher as child view controller (for proper safeAreaLayoutGuide)
+    [self.overlayWindow.rootViewController addChildViewController:self.launcherContainer];
+    [self.overlayWindow.rootViewController.view addSubview:self.launcherContainer.view];
+    [self.overlayWindow.rootViewController.view bringSubviewToFront:self.launcherContainer.view];
+    
+    // Add launcher view to container
+    self.launcherView.view.frame = self.launcherContainer.view.bounds;
+    self.launcherView.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [self.launcherContainer addChildViewController:self.launcherView];
+    [self.launcherContainer.view addSubview:self.launcherView.view];
+    [self.launcherView didMoveToParentViewController:self.launcherContainer];
     
     // Animate in
-    self.launcherView.view.alpha = 0.0;
+    self.launcherContainer.view.alpha = 0.0;
     [UIView animateWithDuration:0.3 animations:^{
-        self.launcherView.view.alpha = 1.0;
+        self.launcherContainer.view.alpha = 1.0;
     }];
     
     self.isLauncherVisible = YES;
@@ -144,9 +225,16 @@ static LCOSCore *_sharedInstance = nil;
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: hideLauncher"];
     
     [UIView animateWithDuration:0.3 animations:^{
-        self.launcherView.view.alpha = 0.0;
+        self.launcherContainer.view.alpha = 0.0;
     } completion:^(BOOL finished) {
+        [self.launcherView willMoveToParentViewController:nil];
         [self.launcherView.view removeFromSuperview];
+        [self.launcherView removeFromParentViewController];
+        
+        [self.launcherContainer willMoveToParentViewController:nil];
+        [self.launcherContainer.view removeFromSuperview];
+        [self.launcherContainer removeFromParentViewController];
+        
         self.isLauncherVisible = NO;
         
         // Show floating button again

@@ -5,6 +5,7 @@
 
 @class LCOSFloatingButton;
 @class LCOSLauncherView;
+@class UIViewController;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -14,6 +15,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, strong, nullable) UIWindow *overlayWindow;
 @property (nonatomic, strong, nullable) LCOSFloatingButton *floatingButton;
 @property (nonatomic, strong, nullable) LCOSLauncherView *launcherView;
+@property (nonatomic, strong, nullable) UIViewController *launcherContainer;
 @property (nonatomic, assign) BOOL isLauncherVisible;
 
 + (instancetype)sharedInstance;
