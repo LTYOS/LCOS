@@ -5,6 +5,13 @@
 //
 
 #import "LCOSDock.h"
+#import <objc/runtime.h>
+
+// Private UICustomBlurEffect for pure gaussian blur without system gray tint
+@interface UICustomBlurEffect : UIBlurEffect
++ (instancetype)effectWithBlurRadius:(CGFloat)radius;
++ (instancetype)effectWithStyle:(NSInteger)style;
+@end
 
 @interface LCOSDock ()
 @property (nonatomic, strong) UIVisualEffectView *blurView;
@@ -23,6 +30,29 @@
     return self;
 }
 
+- (UIBlurEffect *)liquidGlassBlur {
+    // Use UICustomBlurEffect for pure gaussian blur (no system gray material).
+    // iOS 26 Liquid Glass = gaussian blur of background, not a tinted material.
+    Class customBlur = NSClassFromString(@"UICustomBlurEffect");
+    if (customBlur) {
+        // effectWithBlurRadius: gives pure blur without color tint
+        if ([customBlur respondsToSelector:@selector(effectWithBlurRadius:)]) {
+            return [customBlur effectWithBlurRadius:24.0];
+        }
+        // Fallback: style 1 = light, but without material saturation
+        if ([customBlur respondsToSelector:@selector(effectWithStyle:)]) {
+            UICustomBlurEffect *effect = [customBlur effectWithStyle:1];
+            // Set blurRadius via KVC on the internal effect settings
+            @try {
+                [effect setValue:@24.0 forKey:@"blurRadius"];
+            } @catch (NSException *e) {}
+            return effect;
+        }
+    }
+    // Ultimate fallback: systemThinMaterial (least gray of system materials)
+    return [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterial];
+}
+
 - (void)setupGlass {
     self.backgroundColor = [UIColor clearColor];
     self.clipsToBounds = NO;
@@ -37,11 +67,11 @@
     // Soft floating shadow
     self.layer.shadowColor = [UIColor blackColor].CGColor;
     self.layer.shadowOffset = CGSizeMake(0, 4);
-    self.layer.shadowOpacity = 0.12;
+    self.layer.shadowOpacity = 0.10;
     self.layer.shadowRadius = 16;
     
-    // Frosted glass: systemChromeMaterial for stronger blur + frosted look
-    UIBlurEffect *blur = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemChromeMaterial];
+    // Pure gaussian blur (no system gray material)
+    UIBlurEffect *blur = [self liquidGlassBlur];
     self.blurView = [[UIVisualEffectView alloc] initWithEffect:blur];
     self.blurView.layer.cornerRadius = radius;
     if (@available(iOS 13.0, *)) {
@@ -50,20 +80,13 @@
     self.blurView.layer.masksToBounds = YES;
     self.blurView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     
-    // Vibrancy for content inside the glass (icons will be added later)
-    UIVibrancyEffect *vibrancy = [UIVibrancyEffect effectForBlurEffect:blur];
-    UIVisualEffectView *vibrancyView = [[UIVisualEffectView alloc] initWithEffect:vibrancy];
-    vibrancyView.frame = self.blurView.contentView.bounds;
-    vibrancyView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    [self.blurView.contentView addSubview:vibrancyView];
-    
-    // Balanced transparency: 0.85 alpha for frosted glass with visible wallpaper
-    self.blurView.alpha = 0.85;
+    // NO vibrancy - it adds system gray tint. Pure blur only.
+    self.blurView.alpha = 0.9;
     [self addSubview:self.blurView];
     
-    // Subtle white tint for frosted glass feel
+    // Very subtle white tint (liquid glass feel) - minimal to avoid gray
     self.tintView = [[UIView alloc] init];
-    self.tintView.backgroundColor = [[UIColor whiteColor] colorWithAlphaComponent:0.06];
+    self.tintView.backgroundColor = [[UIColor whiteColor] colorWithAlphaComponent:0.03];
     self.tintView.layer.cornerRadius = radius;
     if (@available(iOS 13.0, *)) {
         self.tintView.layer.cornerCurve = kCACornerCurveContinuous;
@@ -75,8 +98,6 @@
     
     // === GLASS EDGE HIGHLIGHTS ===
     // Top-left + bottom-right specular highlights via gradient stroke.
-    // We draw a rounded-rect stroke whose gradient is bright at top-left,
-    // fades in the middle, and bright again at bottom-right.
     self.edgeGradient = [CAGradientLayer layer];
     self.edgeGradient.frame = self.bounds;
     self.edgeGradient.cornerRadius = radius;
