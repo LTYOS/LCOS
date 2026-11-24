@@ -66,15 +66,8 @@
 }
 
 - (void)closeTapped:(UIButton *)sender {
-    [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher close tapped";
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher close tapped"];
     [[LCOSCore sharedInstance] hideLauncher];
-}
-
-// Debug hitTest
-- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    UIView *result = [super hitTest:point withEvent:event];
-    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS LauncherView: hitTest point=%@ -> %@", NSStringFromCGPoint(point), result ? result.description : @"nil"]];
-    return result;
 }
 
 - (void)viewDidLayoutSubviews {
