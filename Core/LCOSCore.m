@@ -126,6 +126,23 @@ static LCOSCore *_sharedInstance = nil;
     return YES; // iOS 12 always valid
 }
 
+// Persistence key for launcher state
+static NSString *const kLCOSLauncherVisibleKey = @"LCOSLauncherVisible";
+
+- (void)saveLauncherState {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    [defaults setBool:self.isLauncherVisible forKey:kLCOSLauncherVisibleKey];
+    [defaults synchronize];
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSCore: Saved launcher state = %@", self.isLauncherVisible ? @"visible" : @"hidden"]];
+}
+
+- (BOOL)loadLauncherState {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    BOOL wasVisible = [defaults boolForKey:kLCOSLauncherVisibleKey];
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSCore: Loaded launcher state = %@", wasVisible ? @"visible" : @"hidden"]];
+    return wasVisible;
+}
+
 - (void)initialize {
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: initialize START"];
     
@@ -185,8 +202,18 @@ static LCOSCore *_sharedInstance = nil;
     // Register gesture recognizers on overlay window (three-finger long press for settings)
     [self registerGesturesOnOverlayWindow];
     
-    // Show floating button
-    [self showFloatingButton];
+    // Restore launcher state: if was visible, show launcher; else show floating button
+    BOOL wasVisible = [self loadLauncherState];
+    if (wasVisible) {
+        [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Restoring launcher state - showing launcher"];
+        // Delay slightly to ensure UI is ready
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self showLauncher];
+        });
+    } else {
+        // Show floating button
+        [self showFloatingButton];
+    }
     
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: initialize COMPLETE"];
 }
@@ -312,6 +339,9 @@ static LCOSCore *_sharedInstance = nil;
     
     // Hide floating button when launcher is shown
     self.floatingButton.hidden = YES;
+    
+    // Save state
+    [self saveLauncherState];
 }
 
 - (void)hideLauncher {
@@ -344,6 +374,9 @@ static LCOSCore *_sharedInstance = nil;
         // Show floating button again
         self.floatingButton.hidden = NO;
         [self.floatingButton showOnWindow:self.overlayWindow];
+        
+        // Save state
+        [self saveLauncherState];
     }];
 }
 
