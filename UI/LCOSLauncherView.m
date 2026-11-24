@@ -9,6 +9,7 @@
 #import "LCOSDock.h"
 #import "LCOSLogManager.h"
 #import "LCOSCore.h"
+#import "LCOSWallpaper.h"
 
 @implementation LCOSLauncherView
 
@@ -35,14 +36,22 @@
     
     [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: viewDidLoad START"];
     
-    // Setup grid (bottom layer)
+    // Wallpaper layer (bottom-most)
+    self.wallpaperView = [[UIImageView alloc] initWithFrame:self.view.bounds];
+    self.wallpaperView.contentMode = UIViewContentModeScaleAspectFill;
+    self.wallpaperView.clipsToBounds = YES;
+    self.wallpaperView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [self.view addSubview:self.wallpaperView];
+    [self reloadWallpaper];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(reloadWallpaper) name:@"LCOSWallpaperDidChange" object:nil];
+    
+    // Setup grid (above wallpaper)
     self.grid = [[LCOSGrid alloc] initWithFrame:self.view.bounds];
     self.grid.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [self.view addSubview:self.grid];
     
-    // Setup dock (middle layer)
-    self.dock = [[LCOSDock alloc] initWithFrame:CGRectMake(0, self.view.frame.size.height - 100, self.view.frame.size.width, 100)];
-    self.dock.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
+    // Setup dock (floating capsule with side/bottom insets)
+    self.dock = [[LCOSDock alloc] initWithFrame:CGRectZero];
     [self.view addSubview:self.dock];
     
     // Add close button (TOP LAYER - must be added last to be on top)
@@ -70,19 +79,31 @@
     [[LCOSCore sharedInstance] hideLauncher];
 }
 
+- (void)reloadWallpaper {
+    UIImage *img = [[LCOSWallpaper shared] currentWallpaper];
+    self.wallpaperView.image = img;
+    self.wallpaperView.backgroundColor = img ? nil : [UIColor systemBackgroundColor];
+}
+
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
-    // Ensure grid fills the view above dock
+    CGFloat w = self.view.bounds.size.width;
+    CGFloat h = self.view.bounds.size.height;
+    CGFloat bottomInset = self.view.safeAreaInsets.bottom;
+    
+    // Grid fills area above the floating dock
+    CGFloat dockHeight = 84.0;
+    CGFloat dockSideInset = 20.0;
+    CGFloat dockBottomGap = bottomInset > 0 ? bottomInset : 12.0;
     if (self.grid) {
-        self.grid.frame = CGRectMake(0, 0, self.view.bounds.size.width, self.view.bounds.size.height - 100);
+        self.grid.frame = CGRectMake(0, 0, w, h - dockHeight - dockBottomGap - 12);
     }
     if (self.dock) {
-        self.dock.frame = CGRectMake(0, self.view.bounds.size.height - 100, self.view.bounds.size.width, 100);
+        self.dock.frame = CGRectMake(dockSideInset, h - dockHeight - dockBottomGap, w - dockSideInset * 2, dockHeight);
     }
     
-    // Log closeButton frame after layout
     if (self.closeButton) {
-        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Launcher: closeButton frame=%@, superview=%@", NSStringFromCGRect(self.closeButton.frame), self.closeButton.superview ? self.closeButton.superview.description : @"nil"]];
+        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Launcher: closeButton frame=%@", NSStringFromCGRect(self.closeButton.frame)]];
     }
 }
 
