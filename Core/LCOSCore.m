@@ -240,18 +240,22 @@ static LCOSCore *_sharedInstance = nil;
     // Allow simultaneous gesture recognition between overlay window and launcher container
     UILongPressGestureRecognizer *overlayLongPress = nil;
     for (UIGestureRecognizer *gr in self.overlayWindow.gestureRecognizers) {
-        if ([gr isKindOfClass:[UILongPressGestureRecognizer class]] && 
-            gr.numberOfTouchesRequired == 3) {
-            overlayLongPress = (UILongPressGestureRecognizer *)gr;
-            break;
+        if ([gr isKindOfClass:[UILongPressGestureRecognizer class]]) {
+            UILongPressGestureRecognizer *lp = (UILongPressGestureRecognizer *)gr;
+            if (lp.numberOfTouchesRequired == 3) {
+                overlayLongPress = lp;
+                break;
+            }
         }
     }
     UILongPressGestureRecognizer *launcherLongPress = nil;
     for (UIGestureRecognizer *gr in self.launcherContainer.view.gestureRecognizers) {
-        if ([gr isKindOfClass:[UILongPressGestureRecognizer class]] && 
-            gr.numberOfTouchesRequired == 3) {
-            launcherLongPress = (UILongPressGestureRecognizer *)gr;
-            break;
+        if ([gr isKindOfClass:[UILongPressGestureRecognizer class]]) {
+            UILongPressGestureRecognizer *lp = (UILongPressGestureRecognizer *)gr;
+            if (lp.numberOfTouchesRequired == 3) {
+                launcherLongPress = lp;
+                break;
+            }
         }
     }
     if (overlayLongPress && launcherLongPress) {
