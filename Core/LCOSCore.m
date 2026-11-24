@@ -25,7 +25,7 @@
     }
     UIView *target = [super hitTest:point withEvent:event];
     
-    // If launcher container is visible and touch is on it, let it handle
+    // If launcher container is visible and touch is on it, let it handle normally
     if (self.launcherContainer && [self.launcherContainer isViewLoaded]) {
         UIView *launcherView = self.launcherContainer.view;
         if (launcherView && !launcherView.hidden && launcherView.alpha > 0.01) {
@@ -35,6 +35,12 @@
             }
         }
     }
+    
+    // For gesture recognizers on the window itself to work (e.g., three-finger long press),
+    // we need to return self when target is self or when target is rootViewController.view
+    // but there's a gesture recognizer that should handle it
+    // Actually, let the normal hitTest work - gesture recognizers are attached to window
+    // and will receive touches through the normal responder chain
     
     // Pass through only for root view controller's transparent view
     // Allow self (window) to receive touches for gesture recognizers
@@ -157,6 +163,8 @@ static LCOSCore *_sharedInstance = nil;
         initWithTarget:self action:@selector(handleThreeFingerLongPress:)];
     longPress.numberOfTouchesRequired = 3;
     longPress.minimumPressDuration = 1.0;
+    // Don't cancel touches - let them pass through to other gesture recognizers
+    longPress.cancelsTouchesInView = NO;
     [self.overlayWindow addGestureRecognizer:longPress];
     
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Three-finger long press registered on overlay window"];
@@ -215,6 +223,8 @@ static LCOSCore *_sharedInstance = nil;
             initWithTarget:self action:@selector(handleThreeFingerLongPress:)];
         longPress.numberOfTouchesRequired = 3;
         longPress.minimumPressDuration = 1.0;
+        // Allow other gestures to receive touches simultaneously
+        longPress.cancelsTouchesInView = NO;
         [self.launcherContainer.view addGestureRecognizer:longPress];
         
         [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Three-finger long press registered on launcher container"];
@@ -259,7 +269,9 @@ static LCOSCore *_sharedInstance = nil;
         }
     }
     if (overlayLongPress && launcherLongPress) {
+        // Both can recognize simultaneously
         [overlayLongPress requireGestureRecognizerToFail:launcherLongPress];
+        [launcherLongPress requireGestureRecognizerToFail:overlayLongPress];
     }
     
     // Animate in

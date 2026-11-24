@@ -43,9 +43,11 @@
     closeButton.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:closeButton];
     
+    // Use view's layout guide for child VC compatibility
+    UILayoutGuide *guide = self.view.layoutMarginsGuide;
     [NSLayoutConstraint activateConstraints:@[
-        [closeButton.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-20],
-        [closeButton.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:20],
+        [closeButton.trailingAnchor constraintEqualToAnchor:guide.trailingAnchor constant:-20],
+        [closeButton.topAnchor constraintEqualToAnchor:guide.topAnchor constant:20],
     ]];
     
     // Setup grid
