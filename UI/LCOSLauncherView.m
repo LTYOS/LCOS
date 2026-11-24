@@ -7,6 +7,7 @@
 #import "LCOSFolder.h"
 #import "LCOSGrid.h"
 #import "LCOSDock.h"
+#import "LCOSAppModel.h"
 #import "LCOSLogManager.h"
 #import "LCOSCore.h"
 #import "LCOSWallpaper.h"
@@ -45,10 +46,18 @@
     [self reloadWallpaper];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(reloadWallpaper) name:@"LCOSWallpaperDidChange" object:nil];
     
-    // Setup grid (above wallpaper)
+    // Setup grid (above wallpaper) - load installed apps from LiveContainer
     self.grid = [[LCOSGrid alloc] initWithFrame:self.view.bounds];
     self.grid.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    self.grid.onAppTapped = ^(LCOSAppModel *appModel) {
+        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Launcher: app tapped - %@", appModel.displayName]];
+        [appModel launch];
+    };
     [self.view addSubview:self.grid];
+    
+    // Load installed apps into grid
+    NSArray<LCOSAppModel *> *installedApps = [LCOSAppModel allInstalledApps];
+    [self.grid setApps:installedApps];
     
     // Setup dock (floating capsule with side/bottom insets)
     self.dock = [[LCOSDock alloc] initWithFrame:CGRectZero];
