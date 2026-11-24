@@ -9,5 +9,6 @@
 
 @property (nonatomic, strong) LCOSGrid *grid;
 @property (nonatomic, strong) LCOSDock *dock;
+@property (nonatomic, strong) UIButton *closeButton;
 
 @end

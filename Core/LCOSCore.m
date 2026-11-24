@@ -31,6 +31,7 @@
         if (launcherView && !launcherView.hidden && launcherView.alpha > 0.01) {
             CGPoint localPoint = [launcherView convertPoint:point fromView:self];
             if (CGRectContainsPoint(launcherView.bounds, localPoint)) {
+                [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS PassThroughWindow: hitTest -> launcherContainer (point=%@)", NSStringFromCGPoint(point)]];
                 return [super hitTest:point withEvent:event]; // Normal hit test for launcher
             }
         }
@@ -42,6 +43,7 @@
         // Use expanded bounds like floatingButton's hitTest
         CGRect expandedBounds = CGRectInset(self.floatingButton.bounds, -20, -20);
         if (CGRectContainsPoint(expandedBounds, localPoint)) {
+            [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS PassThroughWindow: hitTest -> floatingButton (point=%@)", NSStringFromCGPoint(point)]];
             return [super hitTest:point withEvent:event]; // Normal hit test for button
         }
     }
@@ -50,11 +52,13 @@
     if (event && event.type == UIEventTypeTouches) {
         NSSet *touches = [event allTouches];
         if (touches.count >= 3) {
+            [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS PassThroughWindow: hitTest -> self (3+ fingers, count=%ld)", (long)touches.count]];
             return self; // Window receives touch for its gesture recognizers
         }
     }
     
     // 4. All other touches pass through to LiveContainer
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS PassThroughWindow: hitTest -> nil (passthrough, point=%@)", NSStringFromCGPoint(point)]];
     return nil;
 }
 @end
@@ -222,7 +226,7 @@ static LCOSCore *_sharedInstance = nil;
 - (void)showLauncher {
     if (self.isLauncherVisible) return;
     
-    [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: showLauncher"];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: showLauncher";
     
     // Ensure overlay window is visible
     self.overlayWindow.hidden = NO;
@@ -246,6 +250,7 @@ static LCOSCore *_sharedInstance = nil;
         longPress.minimumPressDuration = 1.0;
         // Allow other gestures to receive touches simultaneously
         longPress.cancelsTouchesInView = NO;
+        longPress.delegate = self; // For debugging
         [self.launcherContainer.view addGestureRecognizer:longPress];
         
         [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Three-finger long press registered on launcher container"];
@@ -268,6 +273,8 @@ static LCOSCore *_sharedInstance = nil;
     if ([self.overlayWindow isKindOfClass:[LCOSPassThroughWindow class]]) {
         ((LCOSPassThroughWindow *)self.overlayWindow).launcherContainer = self.launcherContainer;
     }
+    
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSCore: launcherContainer.view frame=%@, rootVC.view.frame=%@", NSStringFromCGRect(self.launcherContainer.view.frame), NSStringFromCGRect(self.overlayWindow.rootViewController.view.frame)]];
     
     // Allow simultaneous gesture recognition between overlay window and launcher container
     UILongPressGestureRecognizer *overlayLongPress = nil;
@@ -294,6 +301,7 @@ static LCOSCore *_sharedInstance = nil;
         // Both can recognize simultaneously - launcher has priority when visible
         [overlayLongPress requireGestureRecognizerToFail:launcherLongPress];
         [launcherLongPress requireGestureRecognizerToFail:overlayLongPress];
+        [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: requireGestureRecognizerToFail set between overlay and launcher gestures"];
     }
     
     // Animate in
@@ -366,6 +374,17 @@ static LCOSCore *_sharedInstance = nil;
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: hideFloatingButton"];
     [self.floatingButton hide];
     self.overlayWindow.hidden = YES;
+}
+
+// UIGestureRecognizerDelegate for debugging
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSCore: gestureRecognizer shouldReceiveTouch gesture=%@ touchView=%@", gestureRecognizer, touch.view]];
+    return YES;
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSCore: shouldRecognizeSimultaneously %@ with %@", gestureRecognizer, otherGestureRecognizer]];
+    return YES;
 }
 
 @end

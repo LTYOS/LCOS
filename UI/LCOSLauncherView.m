@@ -36,19 +36,21 @@
     [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: viewDidLoad START"];
     
     // Add close button
-    UIButton *closeButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [closeButton setTitle:@"关闭" forState:UIControlStateNormal];
-    closeButton.titleLabel.font = [UIFont boldSystemFontOfSize:18];
-    [closeButton addTarget:self action:@selector(closeTapped:) forControlEvents:UIControlEventTouchUpInside];
-    closeButton.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:closeButton];
+    self.closeButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.closeButton setTitle:@"关闭" forState:UIControlStateNormal];
+    self.closeButton.titleLabel.font = [UIFont boldSystemFontOfSize:18];
+    [self.closeButton addTarget:self action:@selector(closeTapped:) forControlEvents:UIControlEventTouchUpInside];
+    self.closeButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:self.closeButton];
     
     // Use view's layout guide for child VC compatibility
     UILayoutGuide *guide = self.view.layoutMarginsGuide;
     [NSLayoutConstraint activateConstraints:@[
-        [closeButton.trailingAnchor constraintEqualToAnchor:guide.trailingAnchor constant:-20],
-        [closeButton.topAnchor constraintEqualToAnchor:guide.topAnchor constant:20],
+        [self.closeButton.trailingAnchor constraintEqualToAnchor:guide.trailingAnchor constant:-20],
+        [self.closeButton.topAnchor constraintEqualToAnchor:guide.topAnchor constant:20],
     ]];
+    
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Launcher: closeButton constraints set, guide.layoutFrame=%@", NSStringFromCGRect(guide.layoutFrame)]];
     
     // Setup grid
     self.grid = [[LCOSGrid alloc] initWithFrame:self.view.bounds];
@@ -64,8 +66,15 @@
 }
 
 - (void)closeTapped:(UIButton *)sender {
-    [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher close tapped"];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher close tapped";
     [[LCOSCore sharedInstance] hideLauncher];
+}
+
+// Debug hitTest
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *result = [super hitTest:point withEvent:event];
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS LauncherView: hitTest point=%@ -> %@", NSStringFromCGPoint(point), result ? result.description : @"nil"]];
+    return result;
 }
 
 - (void)viewDidLayoutSubviews {
