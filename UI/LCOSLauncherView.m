@@ -86,15 +86,6 @@
     }
 }
 
-// Debug hitTest on the view - this is called on the view, not the VC
-- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    // Note: this is on the VC, but hitTest is on UIView. 
-    // The view's hitTest will be called through the normal view hierarchy.
-    // We can't override hitTest on UIViewController, so just log here for debugging
-    // when the view receives hitTest.
-    return [super hitTest:point withEvent:event];
-}
-
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher viewDidAppear"];
