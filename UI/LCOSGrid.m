@@ -8,7 +8,7 @@
 #import "LCOSAppModel.h"
 #import "LCOSLogManager.h"
 
-@interface LCOSGrid () <UIGestureRecognizerDelegate, UIScrollViewDelegate>
+@interface LCOSGrid () <UIScrollViewDelegate>
 
 @property (nonatomic, strong) UIScrollView *scrollView;
 @property (nonatomic, assign) NSInteger currentPage;
@@ -40,12 +40,6 @@
         self.scrollView.delegate = self;
         [self addSubview:self.scrollView];
         
-        // Tap gesture on scrollView to catch icon taps (bypasses paging touch delays)
-        UITapGestureRecognizer *gridTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleGridTap:)];
-        gridTap.cancelsTouchesInView = NO;
-        gridTap.delegate = self;
-        [self.scrollView addGestureRecognizer:gridTap];
-        
         self.pages = [NSMutableArray array];
         self.currentPageItems = [NSMutableArray array];
         self.currentPage = 0;
@@ -66,8 +60,8 @@
     CGFloat h = self.bounds.size.height;
     
     // iOS 26 layout params (17 Pro Max 440pt wide canvas):
-    // Icon size 60x60 pt, column spacing ~28pt, row spacing ~30pt
-    // topInset clears status bar + Dynamic Island (safe area top ~62pt)
+    // Icon size 60x60 pt, column spacing ~28pt, row spacing ~20pt
+    // topInset clears status bar & Dynamic Island (safe area top ~62pt)
     CGFloat sideMargin = 28.0;
     CGFloat iconSize = 60.0;
     CGFloat colSpacing = 28.0;
@@ -151,6 +145,15 @@
             }
         };
         [pageView addSubview:iconView];
+        
+        // Transparent button over the icon to guarantee tap delivery
+        // (bypasses UIScrollView paging touch interception)
+        UIButton *tapButton = [UIButton buttonWithType:UIButtonTypeCustom];
+        tapButton.frame = iconView.bounds;
+        tapButton.backgroundColor = [UIColor clearColor];
+        [tapButton addTarget:self action:@selector(iconButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
+        tapButton.tag = i + pageIndex * self.itemsPerPage; // unique index across pages
+        [iconView addSubview:tapButton];
     }
     
     pageView.frame = CGRectMake((CGFloat)pageIndex * w, 0, w, h);
@@ -173,53 +176,24 @@
     [self.scrollView setContentOffset:offset animated:animated];
 }
 
-// Tap on grid - find which icon was tapped via hitTest
-- (void)handleGridTap:(UITapGestureRecognizer *)tap {
-    if (tap.state != UIGestureRecognizerStateEnded) return;
-    CGPoint point = [tap locationInView:self.scrollView];
-    
-    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSGrid: tap at %@", NSStringFromCGPoint(point)]];
-    
-    // Find the page view containing the point
-    NSInteger pageIndex = lround(point.x / self.scrollView.bounds.size.width);
-    if (pageIndex < 0 || pageIndex >= self.pages.count) {
-        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSGrid: tap pageIndex %ld out of range", (long)pageIndex]];
+// Button tap handler - finds app model by unique tag
+- (void)iconButtonTapped:(UIButton *)button {
+    NSInteger index = button.tag;
+    if (index < 0 || index >= self.allApps.count) {
+        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSGrid: button tag %ld out of range", (long)index]];
         return;
     }
-    
-    UIView *pageView = self.pages[pageIndex];
-    CGPoint pagePoint = CGPointMake(point.x - pageIndex * self.scrollView.bounds.size.width, point.y);
-    
-    // Hit test against icon views on this page
-    for (UIView *subview in pageView.subviews) {
-        if ([subview isKindOfClass:[LCOSAppIconView class]]) {
-            CGPoint localPoint = [subview convertPoint:pagePoint fromView:self.scrollView];
-            if (CGRectContainsPoint(subview.bounds, localPoint)) {
-                LCOSAppIconView *iconView = (LCOSAppIconView *)subview;
-                [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSGrid: hit icon %@", iconView.appModel.displayName]];
-                if (iconView.onTap) {
-                    iconView.onTap(iconView.appModel);
-                }
-                return;
-            }
-        }
+    LCOSAppModel *app = self.allApps[index];
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSGrid: button tapped - %@", app.displayName]];
+    if (self.onAppTapped) {
+        self.onAppTapped(app);
     }
-    [[LCOSLogManager sharedManager] forceLog:@"LCOSGrid: tap hit no icon"];
 }
 
 // UIScrollViewDelegate
 - (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView {
     NSInteger page = round(scrollView.contentOffset.x / scrollView.bounds.size.width);
     self.currentPage = MAX(0, MIN(page, self.pages.count - 1));
-}
-
-// UIGestureRecognizerDelegate - allow tap to coexist with scroll
-- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
-    return YES;
-}
-
-- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
-    return YES;
 }
 
 @end
