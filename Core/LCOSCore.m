@@ -76,6 +76,13 @@
 @implementation LCOSLauncherContainerVC
 - (BOOL)shouldAutorotate { return YES; }
 - (UIInterfaceOrientationMask)supportedInterfaceOrientations { return UIInterfaceOrientationMaskAll; }
+
+// Debug hitTest
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *result = [super hitTest:point withEvent:event];
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS LauncherContainer: hitTest point=%@ -> %@", NSStringFromCGPoint(point), result ? result.description : @"nil"]];
+    return result;
+}
 @end
 
 static LCOSCore *_sharedInstance = nil;

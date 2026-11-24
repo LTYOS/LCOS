@@ -66,11 +66,32 @@
 }
 
 - (void)closeTapped:(UIButton *)sender {
-    [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher close tapped"];
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Launcher close tapped, sender=%@", sender]];
     [[LCOSCore sharedInstance] hideLauncher];
 }
 
 - (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    // Ensure grid fills the view above dock
+    if (self.grid) {
+        self.grid.frame = CGRectMake(0, 0, self.view.bounds.size.width, self.view.bounds.size.height - 100);
+    }
+    if (self.dock) {
+        self.dock.frame = CGRectMake(0, self.view.bounds.size.height - 100, self.view.bounds.size.width, 100);
+    }
+    
+    // Log closeButton frame after layout
+    if (self.closeButton) {
+        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Launcher: closeButton frame=%@, superview=%@", NSStringFromCGRect(self.closeButton.frame), self.closeButton.superview ? self.closeButton.superview.description : @"nil"]];
+    }
+}
+
+// Debug hitTest on the view
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *result = [self.view hitTest:point withEvent:event];
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS LauncherView.view: hitTest point=%@ -> %@", NSStringFromCGPoint(point), result ? result.description : @"nil"]];
+    return result;
+}
     [super viewDidLayoutSubviews];
     // Ensure grid fills the view above dock
     if (self.grid) {
