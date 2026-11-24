@@ -209,6 +209,15 @@ static LCOSCore *_sharedInstance = nil;
         self.launcherContainer.view.backgroundColor = [UIColor clearColor];
         self.launcherContainer.view.frame = self.overlayWindow.rootViewController.view.bounds;
         self.launcherContainer.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        
+        // Add three-finger long press gesture to launcher container for settings
+        UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc] 
+            initWithTarget:self action:@selector(handleThreeFingerLongPress:)];
+        longPress.numberOfTouchesRequired = 3;
+        longPress.minimumPressDuration = 1.0;
+        [self.launcherContainer.view addGestureRecognizer:longPress];
+        
+        [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Three-finger long press registered on launcher container"];
     }
     
     // Add launcher as child view controller (for proper safeAreaLayoutGuide)
@@ -226,6 +235,27 @@ static LCOSCore *_sharedInstance = nil;
     // Set launcherContainer on pass-through window for touch handling
     if ([self.overlayWindow isKindOfClass:[LCOSPassThroughWindow class]]) {
         ((LCOSPassThroughWindow *)self.overlayWindow).launcherContainer = self.launcherContainer;
+    }
+    
+    // Allow simultaneous gesture recognition between overlay window and launcher container
+    UILongPressGestureRecognizer *overlayLongPress = nil;
+    for (UIGestureRecognizer *gr in self.overlayWindow.gestureRecognizers) {
+        if ([gr isKindOfClass:[UILongPressGestureRecognizer class]] && 
+            gr.numberOfTouchesRequired == 3) {
+            overlayLongPress = (UILongPressGestureRecognizer *)gr;
+            break;
+        }
+    }
+    UILongPressGestureRecognizer *launcherLongPress = nil;
+    for (UIGestureRecognizer *gr in self.launcherContainer.view.gestureRecognizers) {
+        if ([gr isKindOfClass:[UILongPressGestureRecognizer class]] && 
+            gr.numberOfTouchesRequired == 3) {
+            launcherLongPress = (UILongPressGestureRecognizer *)gr;
+            break;
+        }
+    }
+    if (overlayLongPress && launcherLongPress) {
+        [overlayLongPress requireGestureRecognizerToFail:launcherLongPress];
     }
     
     // Animate in
