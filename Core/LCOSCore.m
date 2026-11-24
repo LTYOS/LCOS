@@ -12,7 +12,7 @@
 
 // Pass-through window - like LCOrbitPassThroughWindow
 // Transparent regions pass touches to underlying windows
-// BUT gesture recognizers on the window itself still work for multi-finger gestures
+// BUT gesture recognizers on the window work for multi-finger gestures when appropriate
 // AND visible child view controllers (launcher, floating button) receive touches normally
 @interface LCOSPassThroughWindow : UIWindow
 @property (nonatomic, weak) UIViewController *launcherContainer; // For touch handling when launcher is visible
@@ -49,7 +49,13 @@
     }
     
     // 3. For 3+ finger touches, return self so window's gesture recognizers work
-    if (event && event.type == UIEventTypeTouches) {
+    // BUT only when launcher is NOT visible (launcher has its own gesture)
+    // We check this by seeing if launcherContainer is set and visible
+    BOOL launcherVisible = (self.launcherContainer && [self.launcherContainer isViewLoaded] && 
+                           self.launcherContainer.view && !self.launcherContainer.view.hidden && 
+                           self.launcherContainer.view.alpha > 0.01);
+    
+    if (!launcherVisible && event && event.type == UIEventTypeTouches) {
         NSSet *touches = [event allTouches];
         if (touches.count >= 3) {
             [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS PassThroughWindow: hitTest -> self (3+ fingers, count=%ld)", (long)touches.count]];
@@ -73,6 +79,12 @@
 @end
 
 static LCOSCore *_sharedInstance = nil;
+
+// Class extension for private properties
+@interface LCOSCore ()
+@property (nonatomic, strong) UILongPressGestureRecognizer *overlayLongPressGesture;
+@property (nonatomic, strong) UILongPressGestureRecognizer *launcherLongPressGesture;
+@end
 
 @implementation LCOSCore
 
@@ -188,9 +200,11 @@ static LCOSCore *_sharedInstance = nil;
         initWithTarget:self action:@selector(handleThreeFingerLongPress:)];
     longPress.numberOfTouchesRequired = 3;
     longPress.minimumPressDuration = 1.0;
-    // Don't cancel touches - let them pass through to LiveContainer
+    // Don't cancel touches - let them pass through to LiveContainer when gesture fails
     longPress.cancelsTouchesInView = NO;
+    longPress.delegate = self;
     [self.overlayWindow addGestureRecognizer:longPress];
+    self.overlayLongPressGesture = longPress;
     
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Three-finger long press registered on overlay window"];
 }
@@ -198,7 +212,7 @@ static LCOSCore *_sharedInstance = nil;
 // Handle three-finger long press on overlay window
 - (void)handleThreeFingerLongPress:(UILongPressGestureRecognizer *)gesture {
     if (gesture.state == UIGestureRecognizerStateBegan) {
-        [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Three finger long press on overlay - showing settings"];
+        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSCore: Three finger long press (%@) - showing settings", gesture == self.overlayLongPressGesture ? @"overlay" : @"launcher"]];
         
         dispatch_async(dispatch_get_main_queue(), ^{
             // Import at runtime to avoid circular dependency
@@ -216,7 +230,7 @@ static LCOSCore *_sharedInstance = nil;
                 UIWindow *window = windowScene.windows.firstObject;
                 if (window && window.rootViewController) {
                     [window.rootViewController presentViewController:settingsView animated:YES completion:nil];
-                    [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Settings presented from overlay"];
+                    [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Settings presented"];
                 }
             }
         });
@@ -226,7 +240,7 @@ static LCOSCore *_sharedInstance = nil;
 - (void)showLauncher {
     if (self.isLauncherVisible) return;
     
-    [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: showLauncher";
+    [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: showLauncher"];
     
     // Ensure overlay window is visible
     self.overlayWindow.hidden = NO;
@@ -248,10 +262,10 @@ static LCOSCore *_sharedInstance = nil;
             initWithTarget:self action:@selector(handleThreeFingerLongPress:)];
         longPress.numberOfTouchesRequired = 3;
         longPress.minimumPressDuration = 1.0;
-        // Allow other gestures to receive touches simultaneously
         longPress.cancelsTouchesInView = NO;
-        longPress.delegate = self; // For debugging
+        longPress.delegate = self;
         [self.launcherContainer.view addGestureRecognizer:longPress];
+        self.launcherLongPressGesture = longPress;
         
         [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Three-finger long press registered on launcher container"];
     }
@@ -277,32 +291,17 @@ static LCOSCore *_sharedInstance = nil;
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSCore: launcherContainer.view frame=%@, rootVC.view.frame=%@", NSStringFromCGRect(self.launcherContainer.view.frame), NSStringFromCGRect(self.overlayWindow.rootViewController.view.frame)]];
     
     // Allow simultaneous gesture recognition between overlay window and launcher container
-    UILongPressGestureRecognizer *overlayLongPress = nil;
-    for (UIGestureRecognizer *gr in self.overlayWindow.gestureRecognizers) {
-        if ([gr isKindOfClass:[UILongPressGestureRecognizer class]]) {
-            UILongPressGestureRecognizer *lp = (UILongPressGestureRecognizer *)gr;
-            if (lp.numberOfTouchesRequired == 3) {
-                overlayLongPress = lp;
-                break;
-            }
-        }
-    }
-    UILongPressGestureRecognizer *launcherLongPress = nil;
-    for (UIGestureRecognizer *gr in self.launcherContainer.view.gestureRecognizers) {
-        if ([gr isKindOfClass:[UILongPressGestureRecognizer class]]) {
-            UILongPressGestureRecognizer *lp = (UILongPressGestureRecognizer *)gr;
-            if (lp.numberOfTouchesRequired == 3) {
-                launcherLongPress = lp;
-                break;
-            }
-        }
-    }
-    if (overlayLongPress && launcherLongPress) {
+    if (self.overlayLongPressGesture && self.launcherLongPressGesture) {
         // Both can recognize simultaneously - launcher has priority when visible
-        [overlayLongPress requireGestureRecognizerToFail:launcherLongPress];
-        [launcherLongPress requireGestureRecognizerToFail:overlayLongPress];
+        [self.overlayLongPressGesture requireGestureRecognizerToFail:self.launcherLongPressGesture];
+        [self.launcherLongPressGesture requireGestureRecognizerToFail:self.overlayLongPressGesture];
         [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: requireGestureRecognizerToFail set between overlay and launcher gestures"];
     }
+    
+    // IMPORTANT: Disable overlay window gesture when launcher is visible
+    // Launcher has its own gesture recognizer
+    self.overlayLongPressGesture.enabled = NO;
+    [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: overlayLongPressGesture disabled (launcher visible)"];
     
     // Animate in
     self.launcherContainer.view.alpha = 0.0;
@@ -338,6 +337,10 @@ static LCOSCore *_sharedInstance = nil;
         }
         
         self.isLauncherVisible = NO;
+        
+        // Re-enable overlay window gesture when launcher is hidden
+        self.overlayLongPressGesture.enabled = YES;
+        [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: overlayLongPressGesture enabled (launcher hidden)"];
         
         // Show floating button again
         self.floatingButton.hidden = NO;
@@ -376,7 +379,7 @@ static LCOSCore *_sharedInstance = nil;
     self.overlayWindow.hidden = YES;
 }
 
-// UIGestureRecognizerDelegate for debugging
+// UIGestureRecognizerDelegate
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSCore: gestureRecognizer shouldReceiveTouch gesture=%@ touchView=%@", gestureRecognizer, touch.view]];
     return YES;
