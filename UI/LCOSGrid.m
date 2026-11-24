@@ -151,10 +151,11 @@
         [pageView addSubview:iconView];
         
         // Transparent button over the icon to guarantee tap delivery
-        // (bypasses UIScrollView paging touch interception)
+        // (kept for layout compatibility but touch handled by iconView's tap gesture)
         UIButton *tapButton = [UIButton buttonWithType:UIButtonTypeCustom];
         tapButton.frame = iconView.bounds;
         tapButton.backgroundColor = [UIColor clearColor];
+        tapButton.userInteractionEnabled = NO; // Let iconView's tap gesture recognizer handle touches
         [tapButton addTarget:self action:@selector(iconButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
         tapButton.tag = i + pageIndex * self.itemsPerPage; // unique index across pages
         [iconView addSubview:tapButton];
