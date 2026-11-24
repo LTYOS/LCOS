@@ -86,20 +86,13 @@
     }
 }
 
-// Debug hitTest on the view
+// Debug hitTest on the view - this is called on the view, not the VC
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    UIView *result = [self.view hitTest:point withEvent:event];
-    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS LauncherView.view: hitTest point=%@ -> %@", NSStringFromCGPoint(point), result ? result.description : @"nil"]];
-    return result;
-}
-    [super viewDidLayoutSubviews];
-    // Ensure grid fills the view above dock
-    if (self.grid) {
-        self.grid.frame = CGRectMake(0, 0, self.view.bounds.size.width, self.view.bounds.size.height - 100);
-    }
-    if (self.dock) {
-        self.dock.frame = CGRectMake(0, self.view.bounds.size.height - 100, self.view.bounds.size.width, 100);
-    }
+    // Note: this is on the VC, but hitTest is on UIView. 
+    // The view's hitTest will be called through the normal view hierarchy.
+    // We can't override hitTest on UIViewController, so just log here for debugging
+    // when the view receives hitTest.
+    return [super hitTest:point withEvent:event];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
