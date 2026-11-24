@@ -215,12 +215,6 @@ static LCOSCore *_sharedInstance = nil;
         [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSCore: Three finger long press (%@) - showing settings", gesture == self.overlayLongPressGesture ? @"overlay" : @"launcher"]];
         
         dispatch_async(dispatch_get_main_queue(), ^{
-            // If launcher is visible, hide it first so settings can be seen
-            if (self.isLauncherVisible) {
-                [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Hiding launcher before presenting settings"];
-                [self hideLauncher];
-            }
-            
             // Import at runtime to avoid circular dependency
             Class settingsClass = NSClassFromString(@"LCOSSettingsView");
             if (settingsClass) {
@@ -231,12 +225,11 @@ static LCOSCore *_sharedInstance = nil;
                     settingsView = [settingsView init];
                 }
                 
-                UIScene *scene = [UIApplication sharedApplication].connectedScenes.anyObject;
-                UIWindowScene *windowScene = (UIWindowScene *)scene;
-                UIWindow *window = windowScene.windows.firstObject;
-                if (window && window.rootViewController) {
-                    [window.rootViewController presentViewController:settingsView animated:YES completion:nil];
-                    [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Settings presented"];
+                // Present settings on overlay window's root view controller (within overlay window)
+                // This keeps settings inside overlay window layer (L1-b), not on LiveContainer window
+                if (self.overlayWindow && self.overlayWindow.rootViewController) {
+                    [self.overlayWindow.rootViewController presentViewController:settingsView animated:YES completion:nil];
+                    [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Settings presented on overlay window"];
                 }
             }
         });
