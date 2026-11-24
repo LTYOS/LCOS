@@ -35,6 +35,8 @@
         self.scrollView.showsVerticalScrollIndicator = NO;
         self.scrollView.pagingEnabled = YES;
         self.scrollView.bounces = YES;
+        self.scrollView.delaysContentTouches = NO;
+        self.scrollView.canCancelContentTouches = NO;
         self.scrollView.delegate = self;
         [self addSubview:self.scrollView];
         
@@ -58,10 +60,11 @@
     CGFloat w = self.bounds.size.width;
     CGFloat h = self.bounds.size.height;
     
-    // iOS 26 icon size: ~80pt on standard iPhone width
-    CGFloat availableWidth = w - 32; // 16pt side margins
+    // iOS 26 layout: larger icons, name close below, grid shifted down
+    CGFloat sideMargin = 16.0;
+    CGFloat availableWidth = w - sideMargin * 2;
     self.itemWidth = availableWidth / self.columns;
-    self.itemHeight = self.itemWidth * 1.15; // icon + name space
+    self.itemHeight = self.itemWidth * 1.25; // icon + name space
     
     // Re-layout existing pages
     [self relayoutCurrentPage];
@@ -122,8 +125,9 @@
     CGFloat startX = (w - totalGridWidth) / 2;
     if (startX < sideMargin) startX = sideMargin;
     
-    CGFloat topInset = 20.0;
-    CGFloat rowSpacing = 16.0;
+    // iOS 26: grid shifted down, more top space
+    CGFloat topInset = 40.0;
+    CGFloat rowSpacing = 24.0;
     CGFloat colSpacing = (w - sideMargin * 2 - totalGridWidth) / (self.columns - 1);
     if (colSpacing < 0) colSpacing = 8.0;
     

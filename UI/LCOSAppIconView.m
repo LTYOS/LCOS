@@ -78,13 +78,13 @@
     CGFloat h = self.bounds.size.height;
     
     // iOS 26 icon layout: icon at top, name below
-    CGFloat iconSize = MIN(w, h) * 0.62;
+    CGFloat iconSize = MIN(w, h) * 0.72;
     CGFloat iconX = (w - iconSize) / 2;
     CGFloat iconY = 4;
     self.iconImageView.frame = CGRectMake(iconX, iconY, iconSize, iconSize);
     
-    // Name label below icon
-    CGFloat labelY = iconY + iconSize + 4;
+    // Name label below icon (close to icon)
+    CGFloat labelY = iconY + iconSize + 2;
     CGFloat labelH = h - labelY - 2;
     self.nameLabel.frame = CGRectMake(0, labelY, w, labelH);
 }
