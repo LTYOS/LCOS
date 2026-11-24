@@ -27,11 +27,21 @@ static NSString *const kLCOSAppsDirectory = @"Applications";
         // 优先通过 runtime 获取 LCAppInfo 类（LCOS 插件运行在 LiveContainer 进程内，类已加载）
         Class lcAppInfoClass = NSClassFromString(@"LCAppInfo");
         if (lcAppInfoClass) {
-            id appInfo = [[lcAppInfoClass alloc] initWithBundlePath:bundlePath];
+            id appInfo = ((id (*)(id, SEL, NSString *))objc_msgSend)(lcAppInfoClass, @selector(alloc), lcAppInfoClass);
+            appInfo = ((id (*)(id, SEL, NSString *))objc_msgSend)(appInfo, @selector(initWithBundlePath:), bundlePath);
             if (appInfo) {
-                _displayName = [appInfo displayName] ?: @"Unknown";
-                _bundleIdentifier = [appInfo bundleIdentifier] ?: @"Unknown";
-                _icon = [appInfo iconIsDarkIcon:NO] ?: [UIImage systemImageNamed:@"app.fill"];
+                SEL displayNameSel = @selector(displayName);
+                SEL bundleIdSel = @selector(bundleIdentifier);
+                SEL iconSel = @selector(iconIsDarkIcon:);
+                if ([appInfo respondsToSelector:displayNameSel]) {
+                    _displayName = ((NSString *(*)(id, SEL))objc_msgSend)(appInfo, displayNameSel) ?: @"Unknown";
+                }
+                if ([appInfo respondsToSelector:bundleIdSel]) {
+                    _bundleIdentifier = ((NSString *(*)(id, SEL))objc_msgSend)(appInfo, bundleIdSel) ?: @"Unknown";
+                }
+                if ([appInfo respondsToSelector:iconSel]) {
+                    _icon = ((UIImage *(*)(id, SEL, BOOL))objc_msgSend)(appInfo, iconSel, NO) ?: [UIImage systemImageNamed:@"app.fill"];
+                }
                 [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSAppModel: loaded %@ via LCAppInfo", _displayName]];
             }
         }

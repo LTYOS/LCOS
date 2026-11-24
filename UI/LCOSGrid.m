@@ -8,7 +8,7 @@
 #import "LCOSAppModel.h"
 #import "LCOSLogManager.h"
 
-@interface LCOSGrid ()
+@interface LCOSGrid () <UIScrollViewDelegate>
 
 @property (nonatomic, strong) UIScrollView *scrollView;
 @property (nonatomic, assign) NSInteger currentPage;
@@ -146,7 +146,7 @@
     }
     
     // Add page to scroll view
-    pageView.frame = CGRectMake(CGFloat(pageIndex) * w, 0, w, h);
+    pageView.frame = CGRectMake((CGFloat)pageIndex * w, 0, w, h);
     [self.scrollView addSubview:pageView];
 }
 
@@ -163,7 +163,7 @@
 - (void)scrollToPage:(NSInteger)page animated:(BOOL)animated {
     if (page < 0 || page >= self.pages.count) return;
     self.currentPage = page;
-    CGPoint offset = CGPointMake(CGFloat(page) * self.bounds.size.width, 0);
+    CGPoint offset = CGPointMake((CGFloat)page * self.bounds.size.width, 0);
     [self.scrollView setContentOffset:offset animated:animated];
 }
 

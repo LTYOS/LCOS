@@ -90,7 +90,6 @@
 }
 
 - (void)setHighlighted:(BOOL)highlighted {
-    [super setHighlighted:highlighted];
     [UIView animateWithDuration:0.1 animations:^{
         self.highlightView.alpha = highlighted ? 0.3 : 0.0;
         self.iconImageView.transform = highlighted ? CGAffineTransformMakeScale(0.92, 0.92) : CGAffineTransformIdentity;
