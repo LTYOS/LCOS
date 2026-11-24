@@ -38,7 +38,6 @@
         self.scrollView.delaysContentTouches = NO;
         self.scrollView.canCancelContentTouches = NO;
         self.scrollView.decelerationRate = UIScrollViewDecelerationRateFast;
-        self.scrollView.directionalScrollEnabled = YES;
         self.scrollView.delegate = self;
         [self addSubview:self.scrollView];
         
