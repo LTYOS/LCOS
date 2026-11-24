@@ -215,6 +215,12 @@ static LCOSCore *_sharedInstance = nil;
         [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSCore: Three finger long press (%@) - showing settings", gesture == self.overlayLongPressGesture ? @"overlay" : @"launcher"]];
         
         dispatch_async(dispatch_get_main_queue(), ^{
+            // If launcher is visible, hide it first so settings can be seen
+            if (self.isLauncherVisible) {
+                [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Hiding launcher before presenting settings"];
+                [self hideLauncher];
+            }
+            
             // Import at runtime to avoid circular dependency
             Class settingsClass = NSClassFromString(@"LCOSSettingsView");
             if (settingsClass) {
