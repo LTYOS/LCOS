@@ -40,8 +40,8 @@
     self.layer.shadowOpacity = 0.12;
     self.layer.shadowRadius = 16;
     
-    // Frosted glass: systemUltraThinMaterial for maximum transparency + blur
-    UIBlurEffect *blur = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterial];
+    // Frosted glass: systemChromeMaterial for stronger blur + frosted look
+    UIBlurEffect *blur = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemChromeMaterial];
     self.blurView = [[UIVisualEffectView alloc] initWithEffect:blur];
     self.blurView.layer.cornerRadius = radius;
     if (@available(iOS 13.0, *)) {
@@ -57,13 +57,13 @@
     vibrancyView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [self.blurView.contentView addSubview:vibrancyView];
     
-    // More transparent: 0.75 alpha for stronger wallpaper show-through
-    self.blurView.alpha = 0.75;
+    // Balanced transparency: 0.85 alpha for frosted glass with visible wallpaper
+    self.blurView.alpha = 0.85;
     [self addSubview:self.blurView];
     
-    // Very subtle white tint (liquid glass feel) - reduced for more transparency
+    // Subtle white tint for frosted glass feel
     self.tintView = [[UIView alloc] init];
-    self.tintView.backgroundColor = [[UIColor whiteColor] colorWithAlphaComponent:0.04];
+    self.tintView.backgroundColor = [[UIColor whiteColor] colorWithAlphaComponent:0.06];
     self.tintView.layer.cornerRadius = radius;
     if (@available(iOS 13.0, *)) {
         self.tintView.layer.cornerCurve = kCACornerCurveContinuous;
