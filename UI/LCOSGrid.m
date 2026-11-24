@@ -8,7 +8,7 @@
 #import "LCOSAppModel.h"
 #import "LCOSLogManager.h"
 
-@interface LCOSGrid () <UIScrollViewDelegate>
+@interface LCOSGrid () <UIGestureRecognizerDelegate, UIScrollViewDelegate>
 
 @property (nonatomic, strong) UIScrollView *scrollView;
 @property (nonatomic, assign) NSInteger currentPage;
@@ -40,11 +40,17 @@
         self.scrollView.delegate = self;
         [self addSubview:self.scrollView];
         
+        // Tap gesture on scrollView to catch icon taps (bypasses paging touch delays)
+        UITapGestureRecognizer *gridTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleGridTap:)];
+        gridTap.cancelsTouchesInView = NO;
+        gridTap.delegate = self;
+        [self.scrollView addGestureRecognizer:gridTap];
+        
         self.pages = [NSMutableArray array];
         self.currentPageItems = [NSMutableArray array];
         self.currentPage = 0;
         
-        // iOS 26 grid defaults: 4 columns x 6 rows per page on iPhone
+        // iOS 26 grid: 4 columns x 6 rows per page
         self.columns = 4;
         self.rows = 6;
         self.itemsPerPage = self.columns * self.rows;
@@ -56,24 +62,28 @@
     [super layoutSubviews];
     self.scrollView.frame = self.bounds;
     
-    // Recalculate layout based on current size
     CGFloat w = self.bounds.size.width;
     CGFloat h = self.bounds.size.height;
     
-    // iOS 26 layout: larger icons, name close below, grid shifted down
-    CGFloat sideMargin = 16.0;
-    CGFloat availableWidth = w - sideMargin * 2;
-    self.itemWidth = availableWidth / self.columns;
-    self.itemHeight = self.itemWidth * 1.25; // icon + name space
+    // iOS 26 layout params (17 Pro Max 440pt wide canvas):
+    // Icon size 60x60 pt, column spacing ~28pt, row spacing ~30pt
+    // topInset clears status bar + Dynamic Island (safe area top ~62pt)
+    CGFloat sideMargin = 28.0;
+    CGFloat iconSize = 60.0;
+    CGFloat colSpacing = 28.0;
+    CGFloat totalGridWidth = self.columns * iconSize + (self.columns - 1) * colSpacing;
+    CGFloat startX = (w - totalGridWidth) / 2;
+    if (startX < sideMargin) startX = sideMargin;
     
-    // Re-layout existing pages
+    self.itemWidth = iconSize;
+    self.itemHeight = iconSize + 34; // icon + name label space
+    
     [self relayoutCurrentPage];
 }
 
 - (void)setApps:(NSArray<LCOSAppModel *> *)apps {
     _allApps = [apps copy];
     
-    // Remove existing page views
     for (UIView *page in self.pages) {
         [page removeFromSuperview];
     }
@@ -85,7 +95,6 @@
         return;
     }
     
-    // Create pages
     NSInteger totalPages = (_allApps.count + self.itemsPerPage - 1) / self.itemsPerPage;
     for (NSInteger p = 0; p < totalPages; p++) {
         UIView *pageView = [[UIView alloc] initWithFrame:CGRectZero];
@@ -104,8 +113,6 @@
     }
     
     self.scrollView.contentSize = CGSizeMake(self.bounds.size.width * totalPages, self.bounds.size.height);
-    
-    // Show first page
     [self scrollToPage:0 animated:NO];
     
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSGrid: loaded %lu apps in %ld pages", (unsigned long)_allApps.count, (long)totalPages]];
@@ -116,31 +123,27 @@
     
     CGFloat w = self.bounds.size.width;
     CGFloat h = self.bounds.size.height;
-    CGFloat sideMargin = 16.0;
-    CGFloat itemW = self.itemWidth;
-    CGFloat itemH = self.itemHeight;
-    
-    // Calculate grid origin to center horizontally
-    CGFloat totalGridWidth = self.columns * itemW;
+    CGFloat sideMargin = 28.0;
+    CGFloat iconSize = self.itemWidth;
+    CGFloat colSpacing = 28.0;
+    CGFloat totalGridWidth = self.columns * iconSize + (self.columns - 1) * colSpacing;
     CGFloat startX = (w - totalGridWidth) / 2;
     if (startX < sideMargin) startX = sideMargin;
     
-    // iOS 26: grid shifted down to avoid status bar & Dynamic Island
-    CGFloat topInset = 70.0;
-    CGFloat rowSpacing = 20.0;
-    CGFloat colSpacing = (w - sideMargin * 2 - totalGridWidth) / (self.columns - 1);
-    if (colSpacing < 0) colSpacing = 8.0;
+    // iOS 26: topInset clears status bar & Dynamic Island (safe area top ~62pt)
+    CGFloat topInset = 80.0;
+    CGFloat rowSpacing = 30.0;
     
     for (NSInteger i = 0; i < items.count; i++) {
         LCOSAppModel *app = items[i];
         NSInteger col = i % self.columns;
         NSInteger row = i / self.columns;
         
-        CGFloat x = startX + col * (itemW + colSpacing);
-        CGFloat y = topInset + row * (itemH + rowSpacing);
+        CGFloat x = startX + col * (iconSize + colSpacing);
+        CGFloat y = topInset + row * (self.itemHeight + rowSpacing);
         
         LCOSAppIconView *iconView = [[LCOSAppIconView alloc] initWithAppModel:app];
-        iconView.frame = CGRectMake(x, y, itemW, itemH);
+        iconView.frame = CGRectMake(x, y, iconSize, self.itemHeight);
         iconView.onTap = ^(LCOSAppModel *tappedApp) {
             if (self.onAppTapped) {
                 self.onAppTapped(tappedApp);
@@ -149,13 +152,11 @@
         [pageView addSubview:iconView];
     }
     
-    // Add page to scroll view
     pageView.frame = CGRectMake((CGFloat)pageIndex * w, 0, w, h);
     [self.scrollView addSubview:pageView];
 }
 
 - (void)relayoutCurrentPage {
-    // Re-layout all pages when size changes
     for (NSInteger p = 0; p < self.pages.count; p++) {
         UIView *pageView = self.pages[p];
         NSMutableArray *items = self.currentPageItems[p];
@@ -171,10 +172,46 @@
     [self.scrollView setContentOffset:offset animated:animated];
 }
 
+// Tap on grid - find which icon was tapped via hitTest
+- (void)handleGridTap:(UITapGestureRecognizer *)tap {
+    if (tap.state != UIGestureRecognizerStateEnded) return;
+    CGPoint point = [tap locationInView:self.scrollView];
+    
+    // Find the page view containing the point
+    NSInteger pageIndex = lround(point.x / self.scrollView.bounds.size.width);
+    if (pageIndex < 0 || pageIndex >= self.pages.count) return;
+    
+    UIView *pageView = self.pages[pageIndex];
+    CGPoint pagePoint = CGPointMake(point.x - pageIndex * self.scrollView.bounds.size.width, point.y);
+    
+    // Hit test against icon views on this page
+    for (UIView *subview in pageView.subviews) {
+        if ([subview isKindOfClass:[LCOSAppIconView class]]) {
+            CGPoint localPoint = [subview convertPoint:pagePoint fromView:self.scrollView];
+            if (CGRectContainsPoint(subview.bounds, localPoint)) {
+                LCOSAppIconView *iconView = (LCOSAppIconView *)subview;
+                if (iconView.onTap) {
+                    iconView.onTap(iconView.appModel);
+                }
+                return;
+            }
+        }
+    }
+}
+
 // UIScrollViewDelegate
 - (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView {
     NSInteger page = round(scrollView.contentOffset.x / scrollView.bounds.size.width);
     self.currentPage = MAX(0, MIN(page, self.pages.count - 1));
+}
+
+// UIGestureRecognizerDelegate - allow tap to coexist with scroll
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+    return YES;
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
+    return YES;
 }
 
 @end
