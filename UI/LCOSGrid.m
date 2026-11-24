@@ -131,8 +131,9 @@
     if (startX < sideMargin) startX = sideMargin;
     
     // iOS 26: topInset clears status bar & Dynamic Island (safe area top ~62pt)
-    CGFloat topInset = 80.0;
-    CGFloat rowSpacing = 30.0;
+    // Push first row down by ~1/3 icon height (~20pt) from safe area top
+    CGFloat topInset = 100.0;
+    CGFloat rowSpacing = 20.0;
     
     for (NSInteger i = 0; i < items.count; i++) {
         LCOSAppModel *app = items[i];
@@ -177,9 +178,14 @@
     if (tap.state != UIGestureRecognizerStateEnded) return;
     CGPoint point = [tap locationInView:self.scrollView];
     
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSGrid: tap at %@", NSStringFromCGPoint(point)]];
+    
     // Find the page view containing the point
     NSInteger pageIndex = lround(point.x / self.scrollView.bounds.size.width);
-    if (pageIndex < 0 || pageIndex >= self.pages.count) return;
+    if (pageIndex < 0 || pageIndex >= self.pages.count) {
+        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSGrid: tap pageIndex %ld out of range", (long)pageIndex]];
+        return;
+    }
     
     UIView *pageView = self.pages[pageIndex];
     CGPoint pagePoint = CGPointMake(point.x - pageIndex * self.scrollView.bounds.size.width, point.y);
@@ -190,6 +196,7 @@
             CGPoint localPoint = [subview convertPoint:pagePoint fromView:self.scrollView];
             if (CGRectContainsPoint(subview.bounds, localPoint)) {
                 LCOSAppIconView *iconView = (LCOSAppIconView *)subview;
+                [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSGrid: hit icon %@", iconView.appModel.displayName]];
                 if (iconView.onTap) {
                     iconView.onTap(iconView.appModel);
                 }
@@ -197,6 +204,7 @@
             }
         }
     }
+    [[LCOSLogManager sharedManager] forceLog:@"LCOSGrid: tap hit no icon"];
 }
 
 // UIScrollViewDelegate

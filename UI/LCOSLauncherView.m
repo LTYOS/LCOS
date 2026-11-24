@@ -52,8 +52,7 @@
     self.grid.onAppTapped = ^(LCOSAppModel *appModel) {
         [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Launcher: app tapped - %@", appModel.displayName]];
         [appModel launch];
-    };
-    [self.view addSubview:self.grid];
+    };    [self.view addSubview:self.grid];
     
     // Load installed apps into grid
     NSArray<LCOSAppModel *> *installedApps = [LCOSAppModel allInstalledApps];
