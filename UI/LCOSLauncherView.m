@@ -35,7 +35,17 @@
     
     [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: viewDidLoad START"];
     
-    // Add close button
+    // Setup grid (bottom layer)
+    self.grid = [[LCOSGrid alloc] initWithFrame:self.view.bounds];
+    self.grid.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [self.view addSubview:self.grid];
+    
+    // Setup dock (middle layer)
+    self.dock = [[LCOSDock alloc] initWithFrame:CGRectMake(0, self.view.frame.size.height - 100, self.view.frame.size.width, 100)];
+    self.dock.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
+    [self.view addSubview:self.dock];
+    
+    // Add close button (TOP LAYER - must be added last to be on top)
     self.closeButton = [UIButton buttonWithType:UIButtonTypeSystem];
     [self.closeButton setTitle:@"关闭" forState:UIControlStateNormal];
     self.closeButton.titleLabel.font = [UIFont boldSystemFontOfSize:18];
@@ -51,16 +61,6 @@
     ]];
     
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Launcher: closeButton constraints set, guide.layoutFrame=%@", NSStringFromCGRect(guide.layoutFrame)]];
-    
-    // Setup grid
-    self.grid = [[LCOSGrid alloc] initWithFrame:self.view.bounds];
-    self.grid.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    [self.view addSubview:self.grid];
-    
-    // Setup dock
-    self.dock = [[LCOSDock alloc] initWithFrame:CGRectMake(0, self.view.frame.size.height - 100, self.view.frame.size.width, 100)];
-    self.dock.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
-    [self.view addSubview:self.dock];
     
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Launcher UI loaded, view bounds: %@", NSStringFromCGRect(self.view.bounds)]];
 }
