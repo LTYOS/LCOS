@@ -74,29 +74,21 @@ static NSString *const kLCOSAppsDirectory = @"Applications";
     
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSAppModel: launching %@ (%@)", _displayName, _bundlePath]];
     
-    // relativeBundlePath = bundlePath.lastPathComponent (e.g. "com.xxx.app")
-    // This matches LCAppInfo.relativeBundlePath used by host LCAppListView.
-    NSString *relativeBundlePath = _bundlePath.lastPathComponent ?: _bundlePath;
-    
-    // Method 1: URL scheme "livecontainer://livecontainer-launch?bundle-name=..."
-    // Handled by host LCAppListView.swift (always available in host process).
-    NSString *urlString = [NSString stringWithFormat:@"livecontainer://livecontainer-launch?bundle-name=%@", relativeBundlePath];
-    NSURL *url = [NSURL URLWithString:urlString];
-    if (url) {
-        UIApplication *application = [UIApplication sharedApplication];
-        if ([application respondsToSelector:@selector(openURL:options:completionHandler:)]) {
-            [application openURL:url options:@{} completionHandler:^(BOOL success) {
-                [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSAppModel: openURL livecontainer-launch success=%d", success]];
-            }];
+    // LCUtils 是 host (LiveContainer) 端永远有的方法，调用 launchToGuestApp(withClassicMode:)
+    // 这条路径在 host 端由 LCUtils 提供，不依赖 LCSharedUtils 这个类是否存在。
+    Class lcUtils = NSClassFromString(@"LCUtils");
+    if (lcUtils) {
+        SEL sel = NSSelectorFromString(@"launchToGuestAppWithClassicMode:");
+        if ([lcUtils respondsToSelector:sel]) {
+            ((void (*)(id, SEL, NSUInteger))objc_msgSend)(lcUtils, sel, 0);
+            [[LCOSLogManager sharedManager] forceLog:@"LCOSAppModel: LCUtils.launchToGuestAppWithClassicMode called"];
         } else {
-            [application openURL:url];
-            [[LCOSLogManager sharedManager] forceLog:@"LCOSAppModel: openURL (legacy) called"];
+            [[LCOSLogManager sharedManager] forceLog:@"LCOSAppModel: LCUtils.launchToGuestAppWithClassicMode: selector not found"];
         }
-        _isLaunching = NO;
-        return;
+    } else {
+        [[LCOSLogManager sharedManager] forceLog:@"LCOSAppModel: LCUtils class not found"];
     }
     
-    [[LCOSLogManager sharedManager] forceLog:@"LCOSAppModel: failed to build launch URL"];
     _isLaunching = NO;
 }
 
