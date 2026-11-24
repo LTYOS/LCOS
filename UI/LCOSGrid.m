@@ -37,8 +37,13 @@
         self.scrollView.bounces = YES;
         self.scrollView.delaysContentTouches = NO;
         self.scrollView.canCancelContentTouches = NO;
+        self.scrollView.decelerationRate = UIScrollViewDecelerationRateFast;
+        self.scrollView.directionalScrollEnabled = YES;
         self.scrollView.delegate = self;
         [self addSubview:self.scrollView];
+        
+        // Ensure touches pass through to subviews (buttons/icons)
+        self.scrollView.exclusiveTouch = NO;
         
         self.pages = [NSMutableArray array];
         self.currentPageItems = [NSMutableArray array];
