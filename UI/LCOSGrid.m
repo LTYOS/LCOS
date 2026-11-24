@@ -125,9 +125,9 @@
     CGFloat startX = (w - totalGridWidth) / 2;
     if (startX < sideMargin) startX = sideMargin;
     
-    // iOS 26: grid shifted down, more top space
-    CGFloat topInset = 40.0;
-    CGFloat rowSpacing = 24.0;
+    // iOS 26: grid shifted down to avoid status bar & Dynamic Island
+    CGFloat topInset = 70.0;
+    CGFloat rowSpacing = 20.0;
     CGFloat colSpacing = (w - sideMargin * 2 - totalGridWidth) / (self.columns - 1);
     if (colSpacing < 0) colSpacing = 8.0;
     

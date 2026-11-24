@@ -11,6 +11,7 @@
 @property (nonatomic, strong) UIImageView *iconImageView;
 @property (nonatomic, strong) UILabel *nameLabel;
 @property (nonatomic, strong) UIView *highlightView;
+@property (nonatomic, assign) BOOL isPressed;
 
 @end
 
@@ -23,6 +24,7 @@
         self.backgroundColor = [UIColor clearColor];
         self.clipsToBounds = NO;
         self.userInteractionEnabled = YES;
+        self.isPressed = NO;
         
         // Highlight view (iOS 26 style - subtle background on press)
         self.highlightView = [[UIView alloc] initWithFrame:self.bounds];
@@ -47,7 +49,7 @@
         self.iconImageView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
         [self addSubview:self.iconImageView];
         
-        // Name label (iOS 26 style - below icon)
+        // Name label (iOS 26 style - below icon, close to it)
         self.nameLabel = [[UILabel alloc] initWithFrame:CGRectZero];
         self.nameLabel.text = appModel.displayName;
         self.nameLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
@@ -58,16 +60,6 @@
         self.nameLabel.backgroundColor = [UIColor clearColor];
         self.nameLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
         [self addSubview:self.nameLabel];
-        
-        // Tap gesture
-        UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTap:)];
-        [self addGestureRecognizer:tap];
-        
-        // Long press gesture (for future long-press interactions)
-        UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)];
-        longPress.minimumPressDuration = 0.5;
-        longPress.allowableMovement = 15;
-        [self addGestureRecognizer:longPress];
     }
     return self;
 }
@@ -77,36 +69,68 @@
     CGFloat w = self.bounds.size.width;
     CGFloat h = self.bounds.size.height;
     
-    // iOS 26 icon layout: icon at top, name below
+    // iOS 26 icon layout: icon at top, name below (close)
     CGFloat iconSize = MIN(w, h) * 0.72;
     CGFloat iconX = (w - iconSize) / 2;
     CGFloat iconY = 4;
     self.iconImageView.frame = CGRectMake(iconX, iconY, iconSize, iconSize);
     
-    // Name label below icon (close to icon)
+    // Name label below icon (tight spacing)
     CGFloat labelY = iconY + iconSize + 2;
     CGFloat labelH = h - labelY - 2;
     self.nameLabel.frame = CGRectMake(0, labelY, w, labelH);
+    
+    // Highlight view matches bounds
+    self.highlightView.frame = self.bounds;
 }
 
-- (void)setHighlighted:(BOOL)highlighted {
-    [UIView animateWithDuration:0.1 animations:^{
-        self.highlightView.alpha = highlighted ? 0.3 : 0.0;
-        self.iconImageView.transform = highlighted ? CGAffineTransformMakeScale(0.92, 0.92) : CGAffineTransformIdentity;
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [super touchesBegan:touches withEvent:event];
+    self.isPressed = YES;
+    [UIView animateWithDuration:0.08 animations:^{
+        self.highlightView.alpha = 0.35;
+        self.iconImageView.transform = CGAffineTransformMakeScale(0.94, 0.94);
     }];
 }
 
-- (void)handleTap:(UITapGestureRecognizer *)tap {
-    if (tap.state == UIGestureRecognizerStateEnded && self.onTap) {
+- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [super touchesMoved:touches withEvent:event];
+    UITouch *touch = touches.anyObject;
+    CGPoint point = [touch locationInView:self];
+    if (!CGRectContainsPoint(self.bounds, point)) {
+        // Finger left the view, cancel press
+        if (self.isPressed) {
+            self.isPressed = NO;
+            [UIView animateWithDuration:0.08 animations:^{
+                self.highlightView.alpha = 0.0;
+                self.iconImageView.transform = CGAffineTransformIdentity;
+            }];
+        }
+    }
+}
+
+- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [super touchesEnded:touches withEvent:event];
+    self.isPressed = NO;
+    [UIView animateWithDuration:0.08 animations:^{
+        self.highlightView.alpha = 0.0;
+        self.iconImageView.transform = CGAffineTransformIdentity;
+    }];
+    
+    UITouch *touch = touches.anyObject;
+    CGPoint point = [touch locationInView:self];
+    if (CGRectContainsPoint(self.bounds, point) && self.onTap) {
         self.onTap(self.appModel);
     }
 }
 
-- (void)handleLongPress:(UILongPressGestureRecognizer *)longPress {
-    // Placeholder for future long-press interactions (edit mode, etc.)
-    if (longPress.state == UIGestureRecognizerStateBegan) {
-        [[NSNotificationCenter defaultCenter] postNotificationName:@"LCOSAppIconLongPressed" object:self.appModel];
-    }
+- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [super touchesCancelled:touches withEvent:event];
+    self.isPressed = NO;
+    [UIView animateWithDuration:0.08 animations:^{
+        self.highlightView.alpha = 0.0;
+        self.iconImageView.transform = CGAffineTransformIdentity;
+    }];
 }
 
 @end
