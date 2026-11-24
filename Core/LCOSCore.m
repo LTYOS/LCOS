@@ -12,11 +12,11 @@
 
 // Pass-through window - like LCOrbitPassThroughWindow
 // Transparent regions pass touches to underlying windows
-// BUT gesture recognizers on the window itself still work
-// AND visible child view controllers receive touches normally
+// BUT gesture recognizers on the window itself still work for multi-finger gestures
+// AND visible child view controllers (launcher, floating button) receive touches normally
 @interface LCOSPassThroughWindow : UIWindow
 @property (nonatomic, weak) UIViewController *launcherContainer; // For touch handling when launcher is visible
-@property (nonatomic, weak) UIView *gestureView; // Full-screen view for gesture recognition
+@property (nonatomic, weak) LCOSFloatingButton *floatingButton; // For touch handling
 @end
 
 @implementation LCOSPassThroughWindow
@@ -24,9 +24,8 @@
     if (!event || event.type == UIEventTypeTouches) {
         [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSOverlayScreenTouchedNotification" object:nil];
     }
-    UIView *target = [super hitTest:point withEvent:event];
     
-    // If launcher container is visible and touch is on it, let it handle normally
+    // 1. If launcher container is visible and touch is on it, let it handle normally
     if (self.launcherContainer && [self.launcherContainer isViewLoaded]) {
         UIView *launcherView = self.launcherContainer.view;
         if (launcherView && !launcherView.hidden && launcherView.alpha > 0.01) {
@@ -37,16 +36,26 @@
         }
     }
     
-    // If gestureView exists and touch is on it, let it receive for gesture recognizers
-    if (self.gestureView && !self.gestureView.hidden && self.gestureView.alpha > 0.01) {
-        CGPoint localPoint = [self.gestureView convertPoint:point fromView:self];
-        if (CGRectContainsPoint(self.gestureView.bounds, localPoint)) {
-            return self.gestureView; // Let gestureView handle touches for its gesture recognizers
+    // 2. If floating button is visible and touch is on it, let it handle
+    if (self.floatingButton && !self.floatingButton.hidden && self.floatingButton.alpha > 0.01) {
+        CGPoint localPoint = [self.floatingButton convertPoint:point fromView:self];
+        // Use expanded bounds like floatingButton's hitTest
+        CGRect expandedBounds = CGRectInset(self.floatingButton.bounds, -20, -20);
+        if (CGRectContainsPoint(expandedBounds, localPoint)) {
+            return [super hitTest:point withEvent:event]; // Normal hit test for button
         }
     }
     
-    // Pass through only for root view controller's transparent view
-    return (target == self.rootViewController.view) ? nil : target;
+    // 3. For 3+ finger touches, return self so window's gesture recognizers work
+    if (event && event.type == UIEventTypeTouches) {
+        NSSet *touches = [event allTouches];
+        if (touches.count >= 3) {
+            return self; // Window receives touch for its gesture recognizers
+        }
+    }
+    
+    // 4. All other touches pass through to LiveContainer
+    return nil;
 }
 @end
 
@@ -129,19 +138,13 @@ static LCOSCore *_sharedInstance = nil;
             rootVC.view.backgroundColor = [UIColor clearColor];
             self.overlayWindow.rootViewController = rootVC;
             
-            // Create full-screen gesture view (transparent) for gesture recognition
-            UIView *gestureView = [[UIView alloc] initWithFrame:rootVC.view.bounds];
-            gestureView.backgroundColor = [UIColor clearColor];
-            gestureView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-            gestureView.userInteractionEnabled = YES;
-            [rootVC.view addSubview:gestureView];
-            
-            if ([self.overlayWindow isKindOfClass:[LCOSPassThroughWindow class]]) {
-                ((LCOSPassThroughWindow *)self.overlayWindow).gestureView = gestureView;
-            }
-            
             // Create floating button
             self.floatingButton = [LCOSFloatingButton sharedButton];
+            
+            // Set floatingButton on pass-through window for touch handling
+            if ([self.overlayWindow isKindOfClass:[LCOSPassThroughWindow class]]) {
+                ((LCOSPassThroughWindow *)self.overlayWindow).floatingButton = self.floatingButton;
+            }
             
             [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSCore: overlayWindow created level=%ld", (long)self.overlayWindow.windowLevel]];
         }
@@ -156,22 +159,15 @@ static LCOSCore *_sharedInstance = nil;
         rootVC.view.backgroundColor = [UIColor clearColor];
         self.overlayWindow.rootViewController = rootVC;
         
-        // Create full-screen gesture view
-        UIView *gestureView = [[UIView alloc] initWithFrame:rootVC.view.bounds];
-        gestureView.backgroundColor = [UIColor clearColor];
-        gestureView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-        gestureView.userInteractionEnabled = YES;
-        [rootVC.view addSubview:gestureView];
+        self.floatingButton = [LCOSFloatingButton sharedButton];
         
         if ([self.overlayWindow isKindOfClass:[LCOSPassThroughWindow class]]) {
-            ((LCOSPassThroughWindow *)self.overlayWindow).gestureView = gestureView;
+            ((LCOSPassThroughWindow *)self.overlayWindow).floatingButton = self.floatingButton;
         }
-        
-        self.floatingButton = [LCOSFloatingButton sharedButton];
     }
     
-    // Register gesture recognizers on gestureView (three-finger long press for settings)
-    [self registerGesturesOnGestureView];
+    // Register gesture recognizers on overlay window (three-finger long press for settings)
+    [self registerGesturesOnOverlayWindow];
     
     // Show floating button
     [self showFloatingButton];
@@ -179,27 +175,20 @@ static LCOSCore *_sharedInstance = nil;
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: initialize COMPLETE"];
 }
 
-// Register gesture recognizers on gestureView (three-finger long press for settings)
-- (void)registerGesturesOnGestureView {
+// Register gesture recognizers on overlay window (three-finger long press for settings)
+- (void)registerGesturesOnOverlayWindow {
     if (!self.overlayWindow) return;
     
-    // Get gestureView from pass-through window
-    UIView *gestureView = nil;
-    if ([self.overlayWindow isKindOfClass:[LCOSPassThroughWindow class]]) {
-        gestureView = ((LCOSPassThroughWindow *)self.overlayWindow).gestureView;
-    }
-    if (!gestureView) return;
-    
-    // Register three-finger long press on gestureView
+    // Register three-finger long press on overlay window
     UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc] 
         initWithTarget:self action:@selector(handleThreeFingerLongPress:)];
     longPress.numberOfTouchesRequired = 3;
     longPress.minimumPressDuration = 1.0;
     // Don't cancel touches - let them pass through to LiveContainer
     longPress.cancelsTouchesInView = NO;
-    [gestureView addGestureRecognizer:longPress];
+    [self.overlayWindow addGestureRecognizer:longPress];
     
-    [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Three-finger long press registered on gestureView"];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Three-finger long press registered on overlay window"];
 }
 
 // Handle three-finger long press on overlay window
@@ -238,12 +227,6 @@ static LCOSCore *_sharedInstance = nil;
     // Ensure overlay window is visible
     self.overlayWindow.hidden = NO;
     
-    // Get gestureView from pass-through window
-    UIView *gestureView = nil;
-    if ([self.overlayWindow isKindOfClass:[LCOSPassThroughWindow class]]) {
-        gestureView = ((LCOSPassThroughWindow *)self.overlayWindow).gestureView;
-    }
-    
     // Create launcher view if needed
     if (!self.launcherView) {
         self.launcherView = [[LCOSLauncherView alloc] init];
@@ -269,9 +252,10 @@ static LCOSCore *_sharedInstance = nil;
     }
     
     // Add launcher as child view controller (for proper safeAreaLayoutGuide)
-    // Add launcherContainer ABOVE gestureView but BELOW floatingButton
+    // Add launcherContainer to rootVC view (floatingButton is also on rootVC view)
     [self.overlayWindow.rootViewController addChildViewController:self.launcherContainer];
-    [self.overlayWindow.rootViewController.view insertSubview:self.launcherContainer.view aboveSubview:gestureView];
+    [self.overlayWindow.rootViewController.view addSubview:self.launcherContainer.view];
+    [self.overlayWindow.rootViewController.view bringSubviewToFront:self.launcherContainer.view];
     
     // Add launcher view to container
     self.launcherView.view.frame = self.launcherContainer.view.bounds;
@@ -285,16 +269,14 @@ static LCOSCore *_sharedInstance = nil;
         ((LCOSPassThroughWindow *)self.overlayWindow).launcherContainer = self.launcherContainer;
     }
     
-    // Allow simultaneous gesture recognition between gestureView and launcher container
-    UILongPressGestureRecognizer *gestureViewLongPress = nil;
-    if (gestureView) {
-        for (UIGestureRecognizer *gr in gestureView.gestureRecognizers) {
-            if ([gr isKindOfClass:[UILongPressGestureRecognizer class]]) {
-                UILongPressGestureRecognizer *lp = (UILongPressGestureRecognizer *)gr;
-                if (lp.numberOfTouchesRequired == 3) {
-                    gestureViewLongPress = lp;
-                    break;
-                }
+    // Allow simultaneous gesture recognition between overlay window and launcher container
+    UILongPressGestureRecognizer *overlayLongPress = nil;
+    for (UIGestureRecognizer *gr in self.overlayWindow.gestureRecognizers) {
+        if ([gr isKindOfClass:[UILongPressGestureRecognizer class]]) {
+            UILongPressGestureRecognizer *lp = (UILongPressGestureRecognizer *)gr;
+            if (lp.numberOfTouchesRequired == 3) {
+                overlayLongPress = lp;
+                break;
             }
         }
     }
@@ -308,10 +290,10 @@ static LCOSCore *_sharedInstance = nil;
             }
         }
     }
-    if (gestureViewLongPress && launcherLongPress) {
+    if (overlayLongPress && launcherLongPress) {
         // Both can recognize simultaneously - launcher has priority when visible
-        [gestureViewLongPress requireGestureRecognizerToFail:launcherLongPress];
-        [launcherLongPress requireGestureRecognizerToFail:gestureViewLongPress];
+        [overlayLongPress requireGestureRecognizerToFail:launcherLongPress];
+        [launcherLongPress requireGestureRecognizerToFail:overlayLongPress];
     }
     
     // Animate in
