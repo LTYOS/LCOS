@@ -91,9 +91,9 @@
     CGFloat h = self.view.bounds.size.height;
     CGFloat bottomInset = self.view.safeAreaInsets.bottom;
     
-    // Grid fills area above the floating dock
-    CGFloat dockHeight = 84.0;
-    CGFloat dockSideInset = 20.0;
+    // iOS 26/27 dock: ~98pt tall, 16pt side insets, floats above home indicator
+    CGFloat dockHeight = 98.0;
+    CGFloat dockSideInset = 16.0;
     CGFloat dockBottomGap = bottomInset > 0 ? bottomInset : 12.0;
     if (self.grid) {
         self.grid.frame = CGRectMake(0, 0, w, h - dockHeight - dockBottomGap - 12);
