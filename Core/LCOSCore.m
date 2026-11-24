@@ -15,7 +15,7 @@
 // BUT gesture recognizers on the window itself still work
 // AND visible child view controllers receive touches normally
 @interface LCOSPassThroughWindow : UIWindow
-@property (nonatomic, weak) id launcherContainer; // For touch handling when launcher is visible
+@property (nonatomic, weak) UIViewController *launcherContainer; // For touch handling when launcher is visible
 @end
 
 @implementation LCOSPassThroughWindow
