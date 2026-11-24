@@ -74,26 +74,29 @@ static NSString *const kLCOSAppsDirectory = @"Applications";
     
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSAppModel: launching %@ (%@)", _displayName, _bundlePath]];
     
-    // 通过 runtime 调用 LCSharedUtils.launchToGuestAppWithClassicMode:
-    // 先设置 UserDefaults，让 LiveContainer 知道要启动哪个 app
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    [defaults setObject:_bundlePath forKey:@"selected"];
-    [defaults removeObjectForKey:@"selectedContainer"]; // 让 LiveContainer 自动创建容器
-    [defaults synchronize];
+    // relativeBundlePath = bundlePath.lastPathComponent (e.g. "com.xxx.app")
+    // This matches LCAppInfo.relativeBundlePath used by host LCAppListView.
+    NSString *relativeBundlePath = _bundlePath.lastPathComponent ?: _bundlePath;
     
-    Class lcSharedUtils = NSClassFromString(@"LCSharedUtils");
-    if (lcSharedUtils) {
-        SEL sel = NSSelectorFromString(@"launchToGuestAppWithClassicMode:");
-        if ([lcSharedUtils respondsToSelector:sel]) {
-            ((void (*)(id, SEL, NSUInteger))objc_msgSend)(lcSharedUtils, sel, 0);
-            [[LCOSLogManager sharedManager] forceLog:@"LCOSAppModel: launchToGuestAppWithClassicMode called"];
+    // Method 1: URL scheme "livecontainer://livecontainer-launch?bundle-name=..."
+    // Handled by host LCAppListView.swift (always available in host process).
+    NSString *urlString = [NSString stringWithFormat:@"livecontainer://livecontainer-launch?bundle-name=%@", relativeBundlePath];
+    NSURL *url = [NSURL URLWithString:urlString];
+    if (url) {
+        UIApplication *application = [UIApplication sharedApplication];
+        if ([application respondsToSelector:@selector(openURL:options:completionHandler:)]) {
+            [application openURL:url options:@{} completionHandler:^(BOOL success) {
+                [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSAppModel: openURL livecontainer-launch success=%d", success]];
+            }];
         } else {
-            [[LCOSLogManager sharedManager] forceLog:@"LCOSAppModel: LCSharedUtils.launchToGuestAppWithClassicMode: not found"];
+            [application openURL:url];
+            [[LCOSLogManager sharedManager] forceLog:@"LCOSAppModel: openURL (legacy) called"];
         }
-    } else {
-        [[LCOSLogManager sharedManager] forceLog:@"LCOSAppModel: LCSharedUtils class not found"];
+        _isLaunching = NO;
+        return;
     }
     
+    [[LCOSLogManager sharedManager] forceLog:@"LCOSAppModel: failed to build launch URL"];
     _isLaunching = NO;
 }
 
