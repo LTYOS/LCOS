@@ -86,17 +86,37 @@ static LCOSCore *_sharedInstance = nil;
 @property (nonatomic, strong) UILongPressGestureRecognizer *launcherLongPressGesture;
 @end
 
+// Hook UIWindow.makeKeyAndVisible: as soon as LiveContainer's native window
+// becomes visible, synchronously restore the desktop so no native frame is shown.
+static void (*orig_makeKeyAndVisible)(id self, SEL _cmd);
+static void lcos_makeKeyAndVisible(id self, SEL _cmd) {
+    if (orig_makeKeyAndVisible) orig_makeKeyAndVisible(self, _cmd);
+    if (![NSThread isMainThread]) return;
+    UIWindow *window = (UIWindow *)self;
+    if ([window isKindOfClass:[LCOSPassThroughWindow class]]) return;
+    if (![[NSUserDefaults standardUserDefaults] boolForKey:@"LCOSLauncherVisible"]) return;
+    LCOSCore *core = [LCOSCore sharedInstance];
+    if (!core.overlayWindow || core.isLauncherVisible) return;
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS: makeKeyAndVisible -> restore launcher before first frame"];
+    [core showLauncherImmediately];
+}
+
 @implementation LCOSCore
 
 + (void)load {
     [[LCOSLogManager sharedManager] forceLog:@"LCOS load: +load invoked"];
-    // Use dispatch_once to ensure initialization runs exactly once
     static dispatch_once_t initializationToken;
     dispatch_once(&initializationToken, ^{
-        // Don't initialize immediately - wait for app to be ready
+        // Swizzle makeKeyAndVisible to cover the native window before it renders.
+        Method m = class_getInstanceMethod([UIWindow class], @selector(makeKeyAndVisible));
+        if (m) {
+            orig_makeKeyAndVisible = (void (*)(id, SEL))method_getImplementation(m);
+            method_setImplementation(m, (IMP)lcos_makeKeyAndVisible);
+        }
+        // Initialize as early as possible on the main thread (no async hop).
         dispatch_async(dispatch_get_main_queue(), ^{
             [[LCOSCore sharedInstance] initialize];
-            [[LCOSLogManager sharedManager] forceLog:@"LCOS load: delayed initialize complete"];
+            [[LCOSLogManager sharedManager] forceLog:@"LCOS load: initialize complete"];
         });
     });
 }
@@ -202,14 +222,11 @@ static NSString *const kLCOSLauncherVisibleKey = @"LCOSLauncherVisible";
     // Register gesture recognizers on overlay window (three-finger long press for settings)
     [self registerGesturesOnOverlayWindow];
     
-    // Restore launcher state: if was visible, show launcher; else show floating button
+    // Restore launcher state: if was visible, show launcher synchronously (no animation)
     BOOL wasVisible = [self loadLauncherState];
     if (wasVisible) {
-        [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Restoring launcher state - showing launcher"];
-        // Delay slightly to ensure UI is ready
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self showLauncher];
-        });
+        [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Restoring launcher state - showing launcher immediately"];
+        [self showLauncherImmediately];
     } else {
         // Show floating button
         [self showFloatingButton];
@@ -261,6 +278,14 @@ static NSString *const kLCOSLauncherVisibleKey = @"LCOSLauncherVisible";
             }
         });
     }
+}
+
+- (void)showLauncherImmediately {
+    // Restore desktop without animation so the native UI never flashes.
+    [UIView setAnimationsEnabled:NO];
+    [self showLauncher];
+    if (self.launcherContainer) self.launcherContainer.view.alpha = 1.0;
+    [UIView setAnimationsEnabled:YES];
 }
 
 - (void)showLauncher {

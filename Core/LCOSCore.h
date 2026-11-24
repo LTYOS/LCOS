@@ -21,6 +21,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (instancetype)sharedInstance;
 - (void)initialize;
 - (void)showLauncher;
+- (void)showLauncherImmediately;
 - (void)hideLauncher;
 - (void)toggleLauncher;
 - (void)showFloatingButton;
