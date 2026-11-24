@@ -51,21 +51,8 @@
         self.nameLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
         [self addSubview:self.nameLabel];
         
-        // Tap gesture recognizer - bypasses UIScrollView touch interception
-        UITapGestureRecognizer *tapGesture = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleIconTap:)];
-        tapGesture.cancelsTouchesInView = NO;
-        tapGesture.delaysTouchesBegan = NO;
-        tapGesture.delaysTouchesEnded = NO;
-        [self addGestureRecognizer:tapGesture];
-    }
+        }
     return self;
-}
-
-- (void)handleIconTap:(UITapGestureRecognizer *)gesture {
-    if (gesture.state == UIGestureRecognizerStateEnded && self.onTap) {
-        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSAppIconView: tap gesture recognized - %@", _appModel.displayName]];
-        self.onTap(_appModel);
-    }
 }
 
 - (void)layoutSubviews {

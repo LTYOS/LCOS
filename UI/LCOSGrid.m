@@ -42,11 +42,23 @@
         self.scrollView.pagingEnabled = YES;
         self.scrollView.bounces = YES;
         self.scrollView.delaysContentTouches = NO;
-        self.scrollView.canCancelContentTouches = YES;
+        self.scrollView.canCancelContentTouches = NO;
         self.scrollView.decelerationRate = UIScrollViewDecelerationRateFast;
         self.scrollView.directionalLockEnabled = YES;
         self.scrollView.delegate = self;
         [self addSubview:self.scrollView];
+
+        // Add tap gesture to scrollView to bypass paging interception
+        UITapGestureRecognizer *tapGesture = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(gridTapGestureRecognized:)];
+        tapGesture.cancelsTouchesInView = NO;
+        tapGesture.delaysTouchesBegan = NO;
+        tapGesture.delaysTouchesEnded = NO;
+        tapGesture.numberOfTapsRequired = 1;
+        tapGesture.numberOfTouchesRequired = 1;
+        [self.scrollView addGestureRecognizer:tapGesture];
+
+        // Pan gesture (scrolling/paging) requires tap to fail first
+        [self.scrollView.panGestureRecognizer requireGestureRecognizerToFail:tapGesture];
     }
     return self;
 }
@@ -76,12 +88,6 @@
         for (NSInteger index = start; index < end; index++) {
             LCOSAppModel *app = apps[index];
             LCOSAppIconView *iconView = [[LCOSAppIconView alloc] initWithAppModel:app];
-            __weak typeof(self) weakSelf = self;
-            iconView.onTap = ^(LCOSAppModel *tappedApp) {
-                __strong typeof(weakSelf) strongSelf = weakSelf;
-                [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSGrid: deliver app tap - %@", tappedApp.displayName]];
-                if (strongSelf.onAppTapped) strongSelf.onAppTapped(tappedApp);
-            };
             [pageView addSubview:iconView];
             iconView.translatesAutoresizingMaskIntoConstraints = YES;
             [pageItems addObject:app];
@@ -140,6 +146,38 @@
     if (scrollView.bounds.size.width <= 0) return;
     NSInteger page = round(scrollView.contentOffset.x / scrollView.bounds.size.width);
     self.currentPage = MAX(0, MIN(page, self.pages.count - 1));
+}
+
+- (void)gridTapGestureRecognized:(UITapGestureRecognizer *)gesture {
+    if (gesture.state != UIGestureRecognizerStateEnded) return;
+    CGPoint location = [gesture locationInView:self.scrollView];
+    
+    // Only check the currently visible page for hit testing
+    NSInteger currentPage = self.currentPage;
+    if (currentPage < 0 || currentPage >= self.pages.count) return;
+    UIView *pageView = self.pages[currentPage];
+    
+    // Convert to pageView coordinates
+    CGPoint pagePoint = [self.scrollView convertPoint:location toView:pageView];
+    if (!CGRectContainsPoint(pageView.bounds, pagePoint)) return;
+    
+    // Find which icon was tapped
+    NSArray<UIView *> *icons = pageView.subviews;
+    for (NSInteger index = 0; index < icons.count; index++) {
+        UIView *iconView = icons[index];
+        CGPoint iconPoint = [pageView convertPoint:pagePoint toView:iconView];
+        if (CGRectContainsPoint(iconView.bounds, iconPoint)) {
+            NSInteger globalIndex = currentPage * self.itemsPerPage + index;
+            if (globalIndex < self.allApps.count) {
+                LCOSAppModel *app = self.allApps[globalIndex];
+                [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSGrid: icon tap - %@", app.displayName]];
+                if (self.onAppTapped) self.onAppTapped(app);
+            }
+            return;
+        }
+    }
+    
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSGrid: tap on empty area at %@", NSStringFromCGPoint(location)]];
 }
 
 @end
