@@ -90,15 +90,23 @@ static LCOSCore *_sharedInstance = nil;
 // becomes visible, synchronously restore the desktop so no native frame is shown.
 static void (*orig_makeKeyAndVisible)(id self, SEL _cmd);
 static void lcos_makeKeyAndVisible(id self, SEL _cmd) {
+    // Restore desktop BEFORE the native window becomes visible.
+    if ([NSThread isMainThread]) {
+        UIWindow *window = (UIWindow *)self;
+        if (![window isKindOfClass:[LCOSPassThroughWindow class]] &&
+            [[NSUserDefaults standardUserDefaults] boolForKey:@"LCOSLauncherVisible"]) {
+            LCOSCore *core = [LCOSCore sharedInstance];
+            if (!core.overlayWindow) {
+                [[LCOSLogManager sharedManager] forceLog:@"LCOS: makeKeyAndVisible -> initialize early"];
+                [core initialize];
+            }
+            if (!core.isLauncherVisible) {
+                [[LCOSLogManager sharedManager] forceLog:@"LCOS: makeKeyAndVisible -> restore launcher before native shows"];
+                [core showLauncherImmediately];
+            }
+        }
+    }
     if (orig_makeKeyAndVisible) orig_makeKeyAndVisible(self, _cmd);
-    if (![NSThread isMainThread]) return;
-    UIWindow *window = (UIWindow *)self;
-    if ([window isKindOfClass:[LCOSPassThroughWindow class]]) return;
-    if (![[NSUserDefaults standardUserDefaults] boolForKey:@"LCOSLauncherVisible"]) return;
-    LCOSCore *core = [LCOSCore sharedInstance];
-    if (!core.overlayWindow || core.isLauncherVisible) return;
-    [[LCOSLogManager sharedManager] forceLog:@"LCOS: makeKeyAndVisible -> restore launcher before first frame"];
-    [core showLauncherImmediately];
 }
 
 @implementation LCOSCore
@@ -113,10 +121,15 @@ static void lcos_makeKeyAndVisible(id self, SEL _cmd) {
             orig_makeKeyAndVisible = (void (*)(id, SEL))method_getImplementation(m);
             method_setImplementation(m, (IMP)lcos_makeKeyAndVisible);
         }
-        // Initialize as early as possible on the main thread (no async hop).
+        // Initialize at the earliest scene connection, before SwiftUI renders.
+        [NSNotificationCenter.defaultCenter addObserverForName:@"UISceneWillConnectNotification"
+                                                        object:nil
+                                                         queue:[NSOperationQueue mainQueue]
+                                                    usingBlock:^(NSNotification *note) {
+            [[LCOSCore sharedInstance] initialize];
+        }];
         dispatch_async(dispatch_get_main_queue(), ^{
             [[LCOSCore sharedInstance] initialize];
-            [[LCOSLogManager sharedManager] forceLog:@"LCOS load: initialize complete"];
         });
     });
 }
@@ -164,6 +177,8 @@ static NSString *const kLCOSLauncherVisibleKey = @"LCOSLauncherVisible";
 }
 
 - (void)initialize {
+    // Idempotent: scene notification + async + hook may all call this.
+    if (self.overlayWindow) return;
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: initialize START"];
     
     // Check if window scene is ready
