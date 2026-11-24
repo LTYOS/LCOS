@@ -88,12 +88,14 @@ static LCOSCore *_sharedInstance = nil;
 
 // Hook UIWindow.makeKeyAndVisible: as soon as LiveContainer's native window
 // becomes visible, synchronously restore the desktop so no native frame is shown.
+static BOOL LCOSAutoRestoreEnabled(void);
 static void (*orig_makeKeyAndVisible)(id self, SEL _cmd);
 static void lcos_makeKeyAndVisible(id self, SEL _cmd) {
     // Restore desktop BEFORE the native window becomes visible.
     if ([NSThread isMainThread]) {
         UIWindow *window = (UIWindow *)self;
         if (![window isKindOfClass:[LCOSPassThroughWindow class]] &&
+            LCOSAutoRestoreEnabled() &&
             [[NSUserDefaults standardUserDefaults] boolForKey:@"LCOSLauncherVisible"]) {
             LCOSCore *core = [LCOSCore sharedInstance];
             if (!core.overlayWindow) {
@@ -161,6 +163,14 @@ static void lcos_makeKeyAndVisible(id self, SEL _cmd) {
 
 // Persistence key for launcher state
 static NSString *const kLCOSLauncherVisibleKey = @"LCOSLauncherVisible";
+static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
+
+// Auto-restore defaults to YES unless explicitly disabled.
+static BOOL LCOSAutoRestoreEnabled(void) {
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    if ([d objectForKey:kLCOSAutoRestoreKey] == nil) return YES;
+    return [d boolForKey:kLCOSAutoRestoreKey];
+}
 
 - (void)saveLauncherState {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
@@ -237,8 +247,8 @@ static NSString *const kLCOSLauncherVisibleKey = @"LCOSLauncherVisible";
     // Register gesture recognizers on overlay window (three-finger long press for settings)
     [self registerGesturesOnOverlayWindow];
     
-    // Restore launcher state: if was visible, show launcher synchronously (no animation)
-    BOOL wasVisible = [self loadLauncherState];
+    // Restore launcher state: if auto-restore enabled and was visible, show immediately
+    BOOL wasVisible = LCOSAutoRestoreEnabled() && [self loadLauncherState];
     if (wasVisible) {
         [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Restoring launcher state - showing launcher immediately"];
         [self showLauncherImmediately];
