@@ -71,6 +71,7 @@
         self.pageControl.preferredIndicatorImage = [UIImage systemImageNamed:@"circle.fill"];
         [self addSubview:self.pageControl];
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(layoutSettingsChanged) name:LCOSLayoutDidChangeNotification object:nil];
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(launcherGestureChanged:) name:@"LCOSLauncherGestureActive" object:nil];
     }
     return self;
 }
@@ -116,6 +117,10 @@
 - (void)dealloc {
     [NSObject cancelPreviousPerformRequestsWithTarget:self];
     [NSNotificationCenter.defaultCenter removeObserver:self];
+}
+
+- (void)launcherGestureChanged:(NSNotification *)notification {
+    [self setLauncherGestureActive:[notification.object boolValue]];
 }
 
 - (void)layoutSettingsChanged {
@@ -205,6 +210,14 @@
 
 - (void)scrollViewDidEndScrollingAnimation:(UIScrollView *)scrollView {
     [self scrollViewDidEndDecelerating:scrollView];
+}
+
+- (void)setLauncherGestureActive:(BOOL)active {
+    self.scrollView.scrollEnabled = !active;
+    self.scrollView.panGestureRecognizer.enabled = !active;
+    for (UIGestureRecognizer *gesture in self.scrollView.gestureRecognizers) {
+        if ([gesture isKindOfClass:UITapGestureRecognizer.class]) gesture.enabled = !active;
+    }
 }
 
 - (void)gridTapGestureRecognized:(UITapGestureRecognizer *)gesture {

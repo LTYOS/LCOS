@@ -397,6 +397,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Three-finger long press registered on launcher container"];
     }
     
+    [self setLauncherRoundedCorners:self.dockTransitionActive];
     // Add launcher as child view controller (for proper safeAreaLayoutGuide)
     // Add launcherContainer to rootVC view (floatingButton is also on rootVC view)
     [self.overlayWindow.rootViewController addChildViewController:self.launcherContainer];
@@ -432,6 +433,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     
     // Match the settings sheet: the desktop slides up from the bottom.
     self.launcherContainer.view.alpha = 1.0;
+    [self setLauncherRoundedCorners:YES];
     if (self.dockTransitionActive) {
         self.launcherContainer.view.transform = CGAffineTransformIdentity;
     } else {
@@ -440,6 +442,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
             self.launcherContainer.view.transform = CGAffineTransformIdentity;
         } completion:^(BOOL finished) {
             self.launcherTransitionActive = NO;
+            [self setLauncherRoundedCorners:NO];
         }];
     }
     
@@ -468,6 +471,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 - (void)hideLauncher {
     if (!self.isLauncherVisible || self.launcherTransitionActive) return;
     self.launcherTransitionActive = YES;
+    [self setLauncherRoundedCorners:YES];
     
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: hideLauncher"];
     
@@ -479,6 +483,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 }
 
 - (void)finishHidingLauncher {
+        [self setLauncherRoundedCorners:NO];
         self.launcherContainer.view.transform = CGAffineTransformIdentity;
         [self.launcherView willMoveToParentViewController:nil];
         [self.launcherView.view removeFromSuperview];
@@ -510,7 +515,9 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 }
 
 - (BOOL)usesGestureLauncher {
-    return [NSUserDefaults.standardUserDefaults boolForKey:kLCOSUsesGestureLauncherKey];
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    if ([defaults objectForKey:kLCOSUsesGestureLauncherKey] == nil) return YES;
+    return [defaults boolForKey:kLCOSUsesGestureLauncherKey];
 }
 
 - (void)setUsesGestureLauncher:(BOOL)enabled {
@@ -580,10 +587,12 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     if (![self usesGestureLauncher] || (self.isLauncherVisible && !self.dockTransitionActive)) return;
     CGPoint location = [gesture locationInView:self.overlayWindow];
     if (gesture.state == UIGestureRecognizerStateBegan) {
+        [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSLauncherGestureActive" object:@YES];
         self.dockTransitionActive = YES;
         self.dockGestureStart = location;
         [self prepareLauncherForInteractivePresentation];
         self.launcherContainer.view.transform = CGAffineTransformMakeTranslation(0, self.launcherContainer.view.bounds.size.height);
+        [self setLauncherRoundedCorners:YES];
     } else if (self.dockTransitionActive && gesture.state == UIGestureRecognizerStateChanged) {
         CGFloat upward = MAX(0.0, self.dockGestureStart.y - location.y);
         CGFloat height = self.launcherContainer.view.bounds.size.height;
@@ -592,6 +601,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         CGFloat upward = MAX(0.0, self.dockGestureStart.y - location.y);
         BOOL shouldOpen = gesture.state == UIGestureRecognizerStateEnded && upward > self.launcherContainer.view.bounds.size.height * 0.18;
         self.dockTransitionActive = NO;
+        [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSLauncherGestureActive" object:@NO];
         if (shouldOpen) {
             [self finishInteractivePresentation];
         } else {
@@ -606,6 +616,14 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     }
 }
 
+- (void)setLauncherRoundedCorners:(BOOL)rounded {
+    UIView *view = self.launcherContainer.view;
+    view.layer.cornerRadius = rounded ? 24.0 : 0.0;
+    view.layer.cornerCurve = kCACornerCurveContinuous;
+    view.layer.maskedCorners = rounded ? (kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner) : 0;
+    view.layer.masksToBounds = rounded;
+}
+
 - (void)prepareLauncherForInteractivePresentation {
     [self showLauncher];
     [self.launcherContainer.view.layer removeAllAnimations];
@@ -614,6 +632,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 
 - (void)finishInteractivePresentation {
     self.launcherTransitionActive = YES;
+    [self setLauncherRoundedCorners:NO];
     [UIView animateWithDuration:0.22 delay:0 options:UIViewAnimationOptionCurveEaseOut animations:^{
         self.launcherContainer.view.transform = CGAffineTransformIdentity;
     } completion:^(BOOL finished) {
@@ -626,11 +645,16 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 
 - (void)handleLauncherDismissGesture:(UIPanGestureRecognizer *)gesture {
     if (![self usesGestureLauncher] || !self.isLauncherVisible) return;
+    if (gesture.state == UIGestureRecognizerStateBegan) {
+        [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSLauncherGestureActive" object:@YES];
+        [self setLauncherRoundedCorners:YES];
+    }
     CGFloat translation = [gesture translationInView:self.launcherContainer.view].y;
     if (gesture.state == UIGestureRecognizerStateChanged) {
         self.launcherTransitionActive = YES;
         self.launcherContainer.view.transform = CGAffineTransformMakeTranslation(0, MAX(0.0, translation));
     } else if (gesture.state == UIGestureRecognizerStateEnded || gesture.state == UIGestureRecognizerStateCancelled) {
+        [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSLauncherGestureActive" object:@NO];
         BOOL shouldClose = gesture.state == UIGestureRecognizerStateEnded && translation > self.launcherContainer.view.bounds.size.height * 0.18;
         if (shouldClose) {
             self.launcherTransitionActive = NO;
@@ -640,6 +664,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
                 self.launcherContainer.view.transform = CGAffineTransformIdentity;
             } completion:^(BOOL finished) {
                 self.launcherTransitionActive = NO;
+                [self setLauncherRoundedCorners:NO];
             }];
         }
     }

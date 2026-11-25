@@ -64,6 +64,13 @@ static NSString *const kLCOSButtonCenterY = @"LCOSFloatingButton.centerY";
     self.dragGesture.delegate = self;
     self.dragGesture.maximumNumberOfTouches = 1;
     self.dragGesture.cancelsTouchesInView = NO;
+    UILongPressGestureRecognizer *holdToDrag = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleHoldToDrag:)];
+    holdToDrag.minimumPressDuration = 0.35;
+    holdToDrag.allowableMovement = CGFLOAT_MAX;
+    holdToDrag.cancelsTouchesInView = NO;
+    [self addGestureRecognizer:holdToDrag];
+    [self.dragGesture requireGestureRecognizerToFail:holdToDrag];
+    self.dragGesture.enabled = NO;
     [self addGestureRecognizer:self.dragGesture];
 
     // Initially hidden
@@ -135,6 +142,15 @@ static NSString *const kLCOSButtonCenterY = @"LCOSFloatingButton.centerY";
     self.center = CGPointMake(MIN(maxX, MAX(minX, x)), MIN(maxY, MAX(minY, y)));
 }
 
+- (void)handleHoldToDrag:(UILongPressGestureRecognizer *)gesture {
+    if (gesture.state == UIGestureRecognizerStateBegan) {
+        self.isDragging = YES;
+        self.dragGesture.enabled = YES;
+        [self.superview bringSubviewToFront:self];
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: long-press drag enabled"];
+    }
+}
+
 - (void)handleDrag:(UIPanGestureRecognizer *)gesture {
     UIWindow *window = self.window;
     UIView *container = self.superview;
@@ -159,10 +175,11 @@ static NSString *const kLCOSButtonCenterY = @"LCOSFloatingButton.centerY";
 
 - (void)resetDragging {
     self.isDragging = NO;
+    self.dragGesture.enabled = NO;
 }
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
-    return gestureRecognizer == self.dragGesture;
+    return gestureRecognizer.view == self && otherGestureRecognizer.view == self;
 }
 
 - (void)hide {

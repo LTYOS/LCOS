@@ -170,7 +170,8 @@ static NSString *const kLCOSUsesGestureLauncherKey = @"LCOSUsesGestureLauncher";
 }
 
 - (void)updateEntryModeButton {
-    BOOL gestures = [NSUserDefaults.standardUserDefaults boolForKey:kLCOSUsesGestureLauncherKey];
+    BOOL gestures = [NSUserDefaults.standardUserDefaults objectForKey:kLCOSUsesGestureLauncherKey] == nil ? YES :
+        [NSUserDefaults.standardUserDefaults boolForKey:kLCOSUsesGestureLauncherKey];
     UIButton *button = [self.view viewWithTag:1001];
     [button setTitle:[NSString stringWithFormat:@"桌面打开方式：%@  ›", gestures ? @"手势" : @"悬浮按钮"]
             forState:UIControlStateNormal];
@@ -180,7 +181,8 @@ static NSString *const kLCOSUsesGestureLauncherKey = @"LCOSUsesGestureLauncher";
     UIAlertController *menu = [UIAlertController alertControllerWithTitle:@"桌面打开方式"
                                                                   message:@"两种方式互斥，选择后立即生效"
                                                            preferredStyle:UIAlertControllerStyleActionSheet];
-    BOOL gestures = [NSUserDefaults.standardUserDefaults boolForKey:kLCOSUsesGestureLauncherKey];
+    BOOL gestures = [NSUserDefaults.standardUserDefaults objectForKey:kLCOSUsesGestureLauncherKey] == nil ? YES :
+        [NSUserDefaults.standardUserDefaults boolForKey:kLCOSUsesGestureLauncherKey];
     [menu addAction:[UIAlertAction actionWithTitle:gestures ? @"✓ 手势" : @"手势"
                                             style:UIAlertActionStyleDefault
                                           handler:^(UIAlertAction *action) {
