@@ -8,10 +8,13 @@
 #import "LCOSLogManager.h"
 #import <UIKit/UIKit.h>
 
-@interface LCOSFloatingButton ()
-@property (nonatomic, assign) CGPoint initialTouchPoint;
+@interface LCOSFloatingButton () <UIGestureRecognizerDelegate>
 @property (nonatomic, assign) BOOL isDragging;
+@property (nonatomic, strong) UIPanGestureRecognizer *dragGesture;
 @end
+
+static NSString *const kLCOSButtonCenterX = @"LCOSFloatingButton.centerX";
+static NSString *const kLCOSButtonCenterY = @"LCOSFloatingButton.centerY";
 
 @implementation LCOSFloatingButton
 
@@ -57,6 +60,12 @@
     // Touch events - only tap to toggle launcher
     [self addTarget:self action:@selector(handleTap:) forControlEvents:UIControlEventTouchUpInside];
     
+    self.dragGesture = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handleDrag:)];
+    self.dragGesture.delegate = self;
+    self.dragGesture.maximumNumberOfTouches = 1;
+    self.dragGesture.cancelsTouchesInView = NO;
+    [self addGestureRecognizer:self.dragGesture];
+
     // Initially hidden
     self.hidden = YES;
     self.alpha = 0.0;
@@ -91,9 +100,9 @@
     [window.rootViewController.view addSubview:self];
     [window.rootViewController.view bringSubviewToFront:self];
     
-    // Position at bottom right by default
-    CGRect screenBounds = window.bounds;
-    self.frame = CGRectMake(screenBounds.size.width - 80, screenBounds.size.height - 180, 60, 60);
+    // Restore one persistent position; opening the launcher never resets it.
+    self.bounds = CGRectMake(0, 0, 60, 60);
+    [self restorePositionInWindow:window];
     
     // Animate in
     self.hidden = NO;
@@ -108,6 +117,52 @@
     // Force to topmost layer
     self.layer.zPosition = CGFLOAT_MAX;
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: Shown on window.rootViewController.view, frame=%@, layer.zPosition=%.0f", NSStringFromCGRect(self.frame), self.layer.zPosition]];
+}
+
+- (void)restorePositionInWindow:(UIWindow *)window {
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    UIEdgeInsets safe = window.safeAreaInsets;
+    CGFloat halfWidth = CGRectGetWidth(self.bounds) / 2.0;
+    CGFloat halfHeight = CGRectGetHeight(self.bounds) / 2.0;
+    CGFloat minX = safe.left + halfWidth + 8.0;
+    CGFloat maxX = MAX(minX, CGRectGetWidth(window.bounds) - safe.right - halfWidth - 8.0);
+    CGFloat minY = safe.top + halfHeight + 8.0;
+    CGFloat maxY = MAX(minY, CGRectGetHeight(window.bounds) - safe.bottom - halfHeight - 8.0);
+    BOOL hasSavedPosition = [defaults objectForKey:kLCOSButtonCenterX] != nil &&
+                            [defaults objectForKey:kLCOSButtonCenterY] != nil;
+    CGFloat x = hasSavedPosition ? [defaults doubleForKey:kLCOSButtonCenterX] : maxX;
+    CGFloat y = hasSavedPosition ? [defaults doubleForKey:kLCOSButtonCenterY] : maxY - 100.0;
+    self.center = CGPointMake(MIN(maxX, MAX(minX, x)), MIN(maxY, MAX(minY, y)));
+}
+
+- (void)handleDrag:(UIPanGestureRecognizer *)gesture {
+    UIWindow *window = self.window;
+    UIView *container = self.superview;
+    if (!window || !container) return;
+    if (gesture.state == UIGestureRecognizerStateBegan) {
+        self.isDragging = YES;
+        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(resetDragging) object:nil];
+    }
+    if (gesture.state == UIGestureRecognizerStateBegan || gesture.state == UIGestureRecognizerStateChanged) {
+        CGPoint translation = [gesture translationInView:container];
+        self.center = CGPointMake(self.center.x + translation.x, self.center.y + translation.y);
+        [gesture setTranslation:CGPointZero inView:container];
+        [self restorePositionInWindow:window];
+    }
+    if (gesture.state == UIGestureRecognizerStateEnded || gesture.state == UIGestureRecognizerStateCancelled) {
+        [NSUserDefaults.standardUserDefaults setDouble:self.center.x forKey:kLCOSButtonCenterX];
+        [NSUserDefaults.standardUserDefaults setDouble:self.center.y forKey:kLCOSButtonCenterY];
+        // A drag must not also activate TouchUpInside when the finger lifts.
+        [self performSelector:@selector(resetDragging) withObject:nil afterDelay:0.15];
+    }
+}
+
+- (void)resetDragging {
+    self.isDragging = NO;
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+    return gestureRecognizer == self.dragGesture;
 }
 
 - (void)hide {
