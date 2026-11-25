@@ -5,9 +5,9 @@ NSNotificationName const LCOSLayoutDidChangeNotification = @"LCOSLayoutDidChange
 static NSString *const kPrefix = @"LCOSLayout.";
 
 static NSDictionary<NSString *, NSNumber *> *LCOSDefaults(void) {
-    return @{ @"iconSize": @60, @"cornerRadius": @14, @"labelGap": @3,
-              @"topInset": @80, @"bottomInset": @20, @"rowSpacing": @20,
-              @"columnSpacing": @8, @"pageSize": @8, @"pageOffset": @0 };
+    return @{ @"iconSize": @68.5, @"cornerRadius": @20, @"labelGap": @5,
+              @"topInset": @94.4, @"bottomInset": @40, @"rowSpacing": @17,
+              @"columnSpacing": @30, @"pageSize": @6, @"pageOffset": @0 };
 }
 
 @implementation LCOSLayout
