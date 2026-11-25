@@ -25,7 +25,7 @@
     self.valueLabels = [NSMutableArray array];
     self.sliders = [NSMutableArray array];
 
-    UIBlurEffectView *card = [[UIBlurEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterial]];
+    UIVisualEffectView *card = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterial]];
     card.translatesAutoresizingMaskIntoConstraints = NO;
     card.layer.cornerRadius = 24;
     card.clipsToBounds = YES;

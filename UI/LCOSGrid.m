@@ -67,7 +67,6 @@
         self.pageControl.userInteractionEnabled = NO;
         self.pageControl.currentPageIndicatorTintColor = UIColor.whiteColor;
     self.pageControl.pageIndicatorTintColor = [UIColor colorWithWhite:1.0 alpha:0.35];
-        self.pageControl.currentPageIndicatorImage = [UIImage systemImageNamed:@"circle.fill"];
         self.pageControl.preferredIndicatorImage = [UIImage systemImageNamed:@"circle.fill"];
         [self addSubview:self.pageControl];
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(layoutSettingsChanged) name:LCOSLayoutDidChangeNotification object:nil];
