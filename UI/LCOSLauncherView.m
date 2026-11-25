@@ -62,23 +62,9 @@
     self.dock = [[LCOSDock alloc] initWithFrame:CGRectZero];
     [self.view addSubview:self.dock];
     
-    // Add close button (TOP LAYER - must be added last to be on top)
-    self.closeButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [self.closeButton setTitle:@"关闭" forState:UIControlStateNormal];
-    self.closeButton.titleLabel.font = [UIFont boldSystemFontOfSize:18];
-    [self.closeButton addTarget:self action:@selector(closeTapped:) forControlEvents:UIControlEventTouchUpInside];
-    self.closeButton.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:self.closeButton];
-    
-    // Use view's layout guide for child VC compatibility
-    UILayoutGuide *guide = self.view.layoutMarginsGuide;
-    [NSLayoutConstraint activateConstraints:@[
-        [self.closeButton.trailingAnchor constraintEqualToAnchor:guide.trailingAnchor constant:-20],
-        [self.closeButton.topAnchor constraintEqualToAnchor:guide.topAnchor constant:20],
-    ]];
-    
-    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Launcher: closeButton constraints set, guide.layoutFrame=%@", NSStringFromCGRect(guide.layoutFrame)]];
-    
+    // The shared floating button remains above the launcher and acts as its
+    // close button. Do not create a second button with a different position.
+
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Launcher UI loaded, view bounds: %@", NSStringFromCGRect(self.view.bounds)]];
 }
 
