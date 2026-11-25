@@ -6,6 +6,7 @@
 #import "LCOSSettingsView.h"
 #import "LCOSLogManager.h"
 #import "LCOSWallpaper.h"
+#import "LCOSLayoutSettingsView.h"
 
 static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
 
@@ -125,7 +126,36 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
         [clearBtn.topAnchor constraintEqualToAnchor:chooseBtn.bottomAnchor constant:16],
     ]];
     
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS Settings viewDidLoad")];
+    UILabel *developerLabel = [[UILabel alloc] init];
+    developerLabel.text = @"开发者功能";
+    developerLabel.font = [UIFont boldSystemFontOfSize:17];
+    developerLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:developerLabel];
+
+    UIButton *layoutButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    layoutButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+    [layoutButton setTitle:@"桌面布局  ›" forState:UIControlStateNormal];
+    layoutButton.titleLabel.font = [UIFont systemFontOfSize:17];
+    [layoutButton addTarget:self action:@selector(openLayoutSettings) forControlEvents:UIControlEventTouchUpInside];
+    layoutButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:layoutButton];
+    [NSLayoutConstraint activateConstraints:@[
+        [developerLabel.leadingAnchor constraintEqualToAnchor:wallpaperLabel.leadingAnchor],
+        [developerLabel.topAnchor constraintEqualToAnchor:self.wallpaperPreview.bottomAnchor constant:28],
+        [layoutButton.leadingAnchor constraintEqualToAnchor:developerLabel.leadingAnchor],
+        [layoutButton.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-24],
+        [layoutButton.topAnchor constraintEqualToAnchor:developerLabel.bottomAnchor constant:12],
+        [layoutButton.heightAnchor constraintEqualToConstant:44],
+    ]];
+
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Settings viewDidLoad"];
+}
+
+- (void)openLayoutSettings {
+    LCOSLayoutSettingsView *controller = [[LCOSLayoutSettingsView alloc] init];
+    controller.modalPresentationStyle = UIModalPresentationOverFullScreen;
+    controller.modalTransitionStyle = UIModalTransitionStyleCrossDissolve;
+    [self presentViewController:controller animated:YES completion:nil];
 }
 
 - (void)chooseWallpaper {

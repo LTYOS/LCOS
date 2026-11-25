@@ -6,6 +6,7 @@
 #import "LCOSAppIconView.h"
 #import "LCOSAppModel.h"
 #import "LCOSLogManager.h"
+#import "LCOSLayout.h"
 
 @interface LCOSAppIconView ()
 
@@ -62,11 +63,12 @@
     CGFloat w = self.bounds.size.width;
     CGFloat h = self.bounds.size.height;
     
-    CGFloat iconSize = MIN(60.0, MIN(w, h - 20.0));
+    CGFloat iconSize = MIN([LCOSLayout value:@"iconSize"], w);
     self.iconImageView.autoresizingMask = UIViewAutoresizingNone;
     self.nameLabel.autoresizingMask = UIViewAutoresizingNone;
+    self.iconImageView.layer.cornerRadius = MIN([LCOSLayout value:@"cornerRadius"], iconSize / 2.0);
     self.iconImageView.frame = CGRectMake((w - iconSize) / 2.0, 0, iconSize, iconSize);
-    self.nameLabel.frame = CGRectMake(0, iconSize + 3.0, w, 16.0);
+    self.nameLabel.frame = CGRectMake(0, iconSize + [LCOSLayout value:@"labelGap"], w, 16.0);
 }
 
 @end

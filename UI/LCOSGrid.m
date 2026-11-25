@@ -7,6 +7,7 @@
 #import "LCOSAppIconView.h"
 #import "LCOSAppModel.h"
 #import "LCOSLogManager.h"
+#import "LCOSLayout.h"
 
 @interface LCOSGrid () <UIScrollViewDelegate>
 @property (nonatomic, strong) UIScrollView *scrollView;
@@ -65,8 +66,11 @@
         self.pageControl.hidesForSinglePage = YES;
         self.pageControl.userInteractionEnabled = NO;
         self.pageControl.currentPageIndicatorTintColor = UIColor.whiteColor;
-        self.pageControl.pageIndicatorTintColor = [UIColor colorWithWhite:1.0 alpha:0.35];
+    self.pageControl.pageIndicatorTintColor = [UIColor colorWithWhite:1.0 alpha:0.35];
+        self.pageControl.currentPageIndicatorImage = [UIImage systemImageNamed:@"circle.fill"];
+        self.pageControl.preferredIndicatorImage = [UIImage systemImageNamed:@"circle.fill"];
         [self addSubview:self.pageControl];
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(layoutSettingsChanged) name:LCOSLayoutDidChangeNotification object:nil];
     }
     return self;
 }
@@ -108,6 +112,14 @@
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSGrid: loaded %lu apps in %ld pages", (unsigned long)apps.count, (long)totalPages]];
 }
 
+- (void)dealloc {
+    [NSNotificationCenter.defaultCenter removeObserver:self];
+}
+
+- (void)layoutSettingsChanged {
+    [self setApps:self.allApps];
+}
+
 - (void)layoutSubviews {
     [super layoutSubviews];
     self.scrollView.frame = self.bounds;
@@ -120,13 +132,13 @@
     self.lastLayoutSize = self.bounds.size;
 
     CGFloat width = self.bounds.size.width;
-    CGFloat height = self.bounds.size.height;
-    CGFloat iconSize = 60.0;
-    self.itemWidth = MIN(88.0, (width - 40.0) / self.columns);
-    self.itemHeight = 80.0;
-    CGFloat columnSpacing = MAX(8.0, (width - self.columns * self.itemWidth - 40.0) / (self.columns - 1));
-    CGFloat rowSpacing = 20.0;
-    CGFloat topInset = self.safeAreaInsets.top > 0 ? self.safeAreaInsets.top + 18.0 : 80.0;
+    CGFloat height = self.bounds.size.height - [LCOSLayout value:@"bottomInset"];
+    CGFloat iconSize = [LCOSLayout value:@"iconSize"];
+    self.itemWidth = MAX(iconSize, MIN(88.0, (width - 40.0) / self.columns));
+    self.itemHeight = iconSize + [LCOSLayout value:@"labelGap"] + 18.0;
+    CGFloat columnSpacing = [LCOSLayout value:@"columnSpacing"];
+    CGFloat rowSpacing = [LCOSLayout value:@"rowSpacing"];
+    CGFloat topInset = [LCOSLayout value:@"topInset"];
     CGFloat gridWidth = self.columns * self.itemWidth + (self.columns - 1) * columnSpacing;
     CGFloat startX = (width - gridWidth) / 2.0;
 
@@ -143,7 +155,9 @@
             icons[index].frame = CGRectMake(x, y, self.itemWidth, self.itemHeight);
         }
     }
-    self.pageControl.frame = CGRectMake(0, height - 32.0, width, 24.0);
+    CGFloat pageSize = [LCOSLayout value:@"pageSize"];
+    self.pageControl.transform = CGAffineTransformMakeScale(pageSize / 8.0, pageSize / 8.0);
+    self.pageControl.frame = CGRectMake(0, height - 24.0 + [LCOSLayout value:@"pageOffset"], width, 24.0);
     self.pageControl.numberOfPages = self.pages.count;
     self.pageControl.currentPage = self.currentPage;
     self.pageControl.currentPageIndicatorTintColor = UIColor.whiteColor;

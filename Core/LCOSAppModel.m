@@ -114,6 +114,33 @@ static NSString *const kLCOSAppsDirectory = @"Applications";
     return @"livecontainer";
 }
 
+- (BOOL)ensureContainerIfNeeded {
+    if (_containerFolderName.length > 0) return YES;
+    Class containerClass = NSClassFromString(@"LCContainer");
+    SEL initSelector = NSSelectorFromString(@"initWithFolderName:name:isShared:");
+    SEL makeSelector = NSSelectorFromString(@"makeLCContainerInfoPlistWithAppIdentifier:keychainGroupId:");
+    if (![containerClass instancesRespondToSelector:initSelector] ||
+        ![containerClass instancesRespondToSelector:makeSelector]) return NO;
+
+    NSString *uuid = NSUUID.UUID.UUIDString;
+    id container = ((id (*)(id, SEL))objc_msgSend)(containerClass, @selector(alloc));
+    container = ((id (*)(id, SEL, NSString *, NSString *, BOOL))objc_msgSend)(container,
+        initSelector, uuid, uuid, NO);
+    ((void (*)(id, SEL, NSString *, NSInteger))objc_msgSend)(container,
+        makeSelector, _bundleIdentifier, 0);
+    if (!container) return NO;
+
+    NSString *plistPath = [_bundlePath stringByAppendingPathComponent:@"LCAppInfo.plist"];
+    NSMutableDictionary *info = [NSMutableDictionary dictionaryWithContentsOfFile:plistPath] ?: [NSMutableDictionary dictionary];
+    info[@"LCDataUUID"] = uuid;
+    info[@"LCContainers"] = @[@{ @"folderName": uuid, @"name": uuid }];
+    if (![info writeToFile:plistPath atomically:YES]) return NO;
+    _containerFolderName = uuid;
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
+        @"LCOSAppModel: initialized container %@ for %@", uuid, _displayName]];
+    return YES;
+}
+
 - (void)launch {
     if (_isLaunching) return;
     _isLaunching = YES;
@@ -133,7 +160,8 @@ static NSString *const kLCOSAppsDirectory = @"Applications";
     // LCSharedUtils writes the selected app/container and starts the guest itself.
     Class sharedUtils = NSClassFromString(@"LCSharedUtils");
     SEL directSelector = @selector(launchToGuestAppWithURL:);
-    // A missing UUID must go through the host UI, which creates the first container.
+    // Initialize the first container before restarting, like LCAppModel.runApp.
+    [self ensureContainerIfNeeded];
     if (_containerFolderName.length > 0 && [sharedUtils respondsToSelector:directSelector]) {
         components.scheme = [self hostURLScheme];
         NSUserDefaults *defaults = [self hostDefaults];
