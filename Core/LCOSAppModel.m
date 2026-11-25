@@ -14,6 +14,7 @@ static NSString *const kLCOSAppsDirectory = @"Applications";
     NSString *_displayName;
     NSString *_bundleIdentifier;
     NSString *_bundlePath;
+    NSString *_containerFolderName;
     UIImage *_icon;
 }
 
@@ -27,7 +28,7 @@ static NSString *const kLCOSAppsDirectory = @"Applications";
         // 优先通过 runtime 获取 LCAppInfo 类（LCOS 插件运行在 LiveContainer 进程内，类已加载）
         Class lcAppInfoClass = NSClassFromString(@"LCAppInfo");
         if (lcAppInfoClass) {
-            id appInfo = ((id (*)(id, SEL, NSString *))objc_msgSend)(lcAppInfoClass, @selector(alloc), lcAppInfoClass);
+            id appInfo = ((id (*)(id, SEL))objc_msgSend)(lcAppInfoClass, @selector(alloc));
             appInfo = ((id (*)(id, SEL, NSString *))objc_msgSend)(appInfo, @selector(initWithBundlePath:), bundlePath);
             if (appInfo) {
                 SEL displayNameSel = @selector(displayName);
@@ -41,6 +42,10 @@ static NSString *const kLCOSAppsDirectory = @"Applications";
                 }
                 if ([appInfo respondsToSelector:iconSel]) {
                     _icon = ((UIImage *(*)(id, SEL, BOOL))objc_msgSend)(appInfo, iconSel, NO) ?: [UIImage systemImageNamed:@"app.fill"];
+                }
+                SEL containerSel = @selector(dataUUID);
+                if ([appInfo respondsToSelector:containerSel]) {
+                    _containerFolderName = ((NSString *(*)(id, SEL))objc_msgSend)(appInfo, containerSel);
                 }
                 [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSAppModel: loaded %@ via LCAppInfo", _displayName]];
             }
@@ -61,6 +66,11 @@ static NSString *const kLCOSAppsDirectory = @"Applications";
             }
         }
         
+        if (!_containerFolderName) {
+            NSDictionary *lcInfo = [NSDictionary dictionaryWithContentsOfFile:
+                [bundlePath stringByAppendingPathComponent:@"LCAppInfo.plist"]];
+            _containerFolderName = lcInfo[@"LCDataUUID"];
+        }
         if (!_bundleIdentifier) {
             _bundleIdentifier = @"Unknown";
         }
@@ -68,34 +78,88 @@ static NSString *const kLCOSAppsDirectory = @"Applications";
     return self;
 }
 
+- (NSURL *)launchURL {
+    NSString *bundleName = _bundlePath.lastPathComponent;
+    if (bundleName.length == 0) return nil;
+    NSURLComponents *components = [[NSURLComponents alloc] init];
+    components.host = @"livecontainer-launch";
+    NSMutableArray<NSURLQueryItem *> *items = [NSMutableArray arrayWithObject:
+        [NSURLQueryItem queryItemWithName:@"bundle-name" value:bundleName]];
+    if (_containerFolderName.length > 0) {
+        [items addObject:[NSURLQueryItem queryItemWithName:@"container-folder-name"
+                                                     value:_containerFolderName]];
+    }
+    components.queryItems = items;
+    return components.URL;
+}
+
+- (NSUserDefaults *)hostDefaults {
+    SEL selector = NSSelectorFromString(@"lcUserDefaults");
+    if (![NSUserDefaults respondsToSelector:selector]) return NSUserDefaults.standardUserDefaults;
+    id defaults = ((id (*)(id, SEL))objc_msgSend)(NSUserDefaults.class, selector);
+    return [defaults isKindOfClass:NSUserDefaults.class] ? defaults : NSUserDefaults.standardUserDefaults;
+}
+
+- (NSString *)hostURLScheme {
+    SEL selector = NSSelectorFromString(@"lcAppUrlScheme");
+    if ([NSUserDefaults respondsToSelector:selector]) {
+        NSString *scheme = ((NSString *(*)(id, SEL))objc_msgSend)(NSUserDefaults.class, selector);
+        if (scheme.length > 0) return scheme;
+    }
+    NSArray *urlTypes = NSBundle.mainBundle.infoDictionary[@"CFBundleURLTypes"];
+    for (NSDictionary *type in urlTypes) {
+        NSString *scheme = [type[@"CFBundleURLSchemes"] firstObject];
+        if ([scheme isKindOfClass:NSString.class] && scheme.length > 0) return scheme;
+    }
+    return @"livecontainer";
+}
+
 - (void)launch {
     if (_isLaunching) return;
     _isLaunching = YES;
-    
-    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSAppModel: launching %@ (%@)", _displayName, _bundlePath]];
-    
-    // 尝试方法1：LCUtils (host 端永远有的方法)
-    Class lcUtils = NSClassFromString(@"LCUtils");
-    if (lcUtils) {
-        SEL sel = NSSelectorFromString(@"launchToGuestAppWithClassicMode:");
-        if ([lcUtils respondsToSelector:sel]) {
-            ((void (*)(id, SEL, NSUInteger))objc_msgSend)(lcUtils, sel, 0);
-            [[LCOSLogManager sharedManager] forceLog:@"LCOSAppModel: LCUtils.launchToGuestAppWithClassicMode called - SUCCESS"];
-            _isLaunching = NO;
-            return;
-        } else {
-            [[LCOSLogManager sharedManager] forceLog:@"LCOSAppModel: LCUtils.launchToGuestAppWithClassicMode: selector not found"];
-        }
-    } else {
-        [[LCOSLogManager sharedManager] forceLog:@"LCOSAppModel: LCUtils class not found"];
+
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
+        @"LCOSAppModel: launching %@ bundle=%@ container=%@", _displayName,
+        _bundlePath.lastPathComponent, _containerFolderName ?: @"(default)"]];
+
+    NSURLComponents *components = [NSURLComponents componentsWithURL:self.launchURL
+                                             resolvingAgainstBaseURL:NO];
+    if (!components) {
+        [[LCOSLogManager sharedManager] forceLog:@"LCOSAppModel: invalid launch URL"];
+        _isLaunching = NO;
+        return;
     }
-    
-    // 方法2：回退 - 尝试通过 XPC 直接启动
-    [[LCOSLogManager sharedManager] forceLog:@"LCOSAppModel: trying fallback launch mechanism"];
-    // TODO: 如果 LCUtils 不可用，可在此处添加其他启动路径
-    // 例如：直接通过 XPC 发送 LaunchConfiguration 命令
-    
-    _isLaunching = NO;
+
+    // LCSharedUtils writes the selected app/container and starts the guest itself.
+    Class sharedUtils = NSClassFromString(@"LCSharedUtils");
+    SEL directSelector = @selector(launchToGuestAppWithURL:);
+    if ([sharedUtils respondsToSelector:directSelector]) {
+        components.scheme = [self hostURLScheme];
+        NSUserDefaults *defaults = [self hostDefaults];
+        [defaults setBool:NO forKey:@"LCOpenSideStore"];
+        [defaults removeObjectForKey:@"launchAppUrlScheme"];
+        BOOL accepted = ((BOOL (*)(id, SEL, NSURL *))objc_msgSend)(sharedUtils,
+                                                                    directSelector, components.URL);
+        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
+            @"LCOSAppModel: LCSharedUtils launch accepted=%d url=%@", accepted, components.URL]];
+        if (!accepted) {
+            [defaults removeObjectForKey:@"selected"];
+            [defaults removeObjectForKey:@"selectedContainer"];
+        }
+        _isLaunching = NO;
+        return;
+    }
+
+    // Host UI fallback: LiveContainer handles the same deep link in LCAppListView.
+    components.scheme = [self hostURLScheme];
+    NSURL *url = components.URL;
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
+        @"LCOSAppModel: opening LiveContainer launch URL %@", url]];
+    [UIApplication.sharedApplication openURL:url options:@{} completionHandler:^(BOOL success) {
+        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
+            @"LCOSAppModel: deep link launch accepted=%d", success]];
+        self.isLaunching = NO;
+    }];
 }
 
 + (NSArray<LCOSAppModel *> *)allInstalledApps {

@@ -151,32 +151,25 @@
 - (void)gridTapGestureRecognized:(UITapGestureRecognizer *)gesture {
     if (gesture.state != UIGestureRecognizerStateEnded) return;
     CGPoint location = [gesture locationInView:self.scrollView];
-    
-    // Only check the currently visible page for hit testing
-    NSInteger currentPage = self.currentPage;
-    if (currentPage < 0 || currentPage >= self.pages.count) return;
-    UIView *pageView = self.pages[currentPage];
-    
-    // Convert to pageView coordinates
-    CGPoint pagePoint = [self.scrollView convertPoint:location toView:pageView];
-    if (!CGRectContainsPoint(pageView.bounds, pagePoint)) return;
-    
-    // Find which icon was tapped
-    NSArray<UIView *> *icons = pageView.subviews;
-    for (NSInteger index = 0; index < icons.count; index++) {
-        UIView *iconView = icons[index];
-        CGPoint iconPoint = [pageView convertPoint:pagePoint toView:iconView];
-        if (CGRectContainsPoint(iconView.bounds, iconPoint)) {
-            NSInteger globalIndex = currentPage * self.itemsPerPage + index;
-            if (globalIndex < self.allApps.count) {
-                LCOSAppModel *app = self.allApps[globalIndex];
-                [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSGrid: icon tap - %@", app.displayName]];
-                if (self.onAppTapped) self.onAppTapped(app);
-            }
+    // scrollView's location is in its content coordinate system (includes
+    // contentOffset). Walk the icon frames directly; convertPoint is not
+    // needed because pageView and icons are all scrollView descendants.
+    for (NSInteger pageIndex = 0; pageIndex < self.pages.count; pageIndex++) {
+        UIView *pageView = self.pages[pageIndex];
+        if (!CGRectContainsPoint(pageView.frame, location)) continue;
+        CGPoint pagePoint = CGPointMake(location.x - pageView.frame.origin.x,
+                                        location.y - pageView.frame.origin.y);
+        for (NSInteger index = 0; index < pageView.subviews.count; index++) {
+            UIView *iconView = pageView.subviews[index];
+            if (!CGRectContainsPoint(iconView.frame, pagePoint)) continue;
+            NSInteger globalIndex = pageIndex * self.itemsPerPage + index;
+            if (globalIndex >= self.allApps.count) return;
+            LCOSAppModel *app = self.allApps[globalIndex];
+            [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSGrid: icon tap - %@", app.displayName]];
+            if (self.onAppTapped) self.onAppTapped(app);
             return;
         }
     }
-    
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSGrid: tap on empty area at %@", NSStringFromCGPoint(location)]];
 }
 
