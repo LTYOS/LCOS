@@ -133,7 +133,8 @@ static NSString *const kLCOSAppsDirectory = @"Applications";
     // LCSharedUtils writes the selected app/container and starts the guest itself.
     Class sharedUtils = NSClassFromString(@"LCSharedUtils");
     SEL directSelector = @selector(launchToGuestAppWithURL:);
-    if ([sharedUtils respondsToSelector:directSelector]) {
+    // A missing UUID must go through the host UI, which creates the first container.
+    if (_containerFolderName.length > 0 && [sharedUtils respondsToSelector:directSelector]) {
         components.scheme = [self hostURLScheme];
         NSUserDefaults *defaults = [self hostDefaults];
         [defaults setBool:NO forKey:@"LCOpenSideStore"];
@@ -150,7 +151,7 @@ static NSString *const kLCOSAppsDirectory = @"Applications";
         return;
     }
 
-    // Host UI fallback: LiveContainer handles the same deep link in LCAppListView.
+    // Host UI handles the deep link in LCAppListView and initializes missing containers.
     components.scheme = [self hostURLScheme];
     NSURL *url = components.URL;
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:

@@ -10,6 +10,7 @@
 
 @interface LCOSGrid () <UIScrollViewDelegate>
 @property (nonatomic, strong) UIScrollView *scrollView;
+@property (nonatomic, strong) UIPageControl *pageControl;
 @property (nonatomic, assign) NSInteger currentPage;
 @property (nonatomic, assign) CGFloat itemWidth;
 @property (nonatomic, assign) CGFloat itemHeight;
@@ -31,7 +32,7 @@
         self.rows = 6;
         self.itemsPerPage = self.columns * self.rows;
         self.itemWidth = 60.0;
-        self.itemHeight = 94.0;
+        self.itemHeight = 80.0;
         self.pages = [NSMutableArray array];
         self.currentPageItems = [NSMutableArray array];
 
@@ -59,6 +60,13 @@
 
         // Pan gesture (scrolling/paging) requires tap to fail first
         [self.scrollView.panGestureRecognizer requireGestureRecognizerToFail:tapGesture];
+
+        self.pageControl = [[UIPageControl alloc] initWithFrame:CGRectZero];
+        self.pageControl.hidesForSinglePage = YES;
+        self.pageControl.userInteractionEnabled = NO;
+        self.pageControl.currentPageIndicatorTintColor = UIColor.whiteColor;
+        self.pageControl.pageIndicatorTintColor = [UIColor colorWithWhite:1.0 alpha:0.35];
+        [self addSubview:self.pageControl];
     }
     return self;
 }
@@ -114,11 +122,13 @@
     CGFloat width = self.bounds.size.width;
     CGFloat height = self.bounds.size.height;
     CGFloat iconSize = 60.0;
-    CGFloat columnSpacing = 28.0;
+    self.itemWidth = MIN(88.0, (width - 40.0) / self.columns);
+    self.itemHeight = 80.0;
+    CGFloat columnSpacing = MAX(8.0, (width - self.columns * self.itemWidth - 40.0) / (self.columns - 1));
     CGFloat rowSpacing = 20.0;
-    CGFloat topInset = 100.0;
-    CGFloat gridWidth = self.columns * iconSize + (self.columns - 1) * columnSpacing;
-    CGFloat startX = MAX(28.0, (width - gridWidth) / 2.0);
+    CGFloat topInset = self.safeAreaInsets.top > 0 ? self.safeAreaInsets.top + 18.0 : 80.0;
+    CGFloat gridWidth = self.columns * self.itemWidth + (self.columns - 1) * columnSpacing;
+    CGFloat startX = (width - gridWidth) / 2.0;
 
     for (NSInteger pageIndex = 0; pageIndex < self.pages.count; pageIndex++) {
         UIView *pageView = self.pages[pageIndex];
@@ -127,12 +137,17 @@
         for (NSInteger index = 0; index < icons.count; index++) {
             NSInteger column = index % self.columns;
             NSInteger row = index / self.columns;
-            CGFloat x = startX + column * (iconSize + columnSpacing);
+            CGFloat x = startX + column * (self.itemWidth + columnSpacing);
             CGFloat y = topInset + row * (self.itemHeight + rowSpacing);
             // Only change frames. Never remove/recreate an icon during touch tracking.
-            icons[index].frame = CGRectMake(x, y, iconSize, self.itemHeight);
+            icons[index].frame = CGRectMake(x, y, self.itemWidth, self.itemHeight);
         }
     }
+    self.pageControl.frame = CGRectMake(0, height - 32.0, width, 24.0);
+    self.pageControl.numberOfPages = self.pages.count;
+    self.pageControl.currentPage = self.currentPage;
+    self.pageControl.currentPageIndicatorTintColor = UIColor.whiteColor;
+    self.pageControl.pageIndicatorTintColor = [UIColor colorWithWhite:1.0 alpha:0.35];
     self.scrollView.contentSize = CGSizeMake(width * self.pages.count, height);
 }
 
@@ -146,6 +161,11 @@
     if (scrollView.bounds.size.width <= 0) return;
     NSInteger page = round(scrollView.contentOffset.x / scrollView.bounds.size.width);
     self.currentPage = MAX(0, MIN(page, self.pages.count - 1));
+    self.pageControl.currentPage = self.currentPage;
+}
+
+- (void)scrollViewDidEndScrollingAnimation:(UIScrollView *)scrollView {
+    [self scrollViewDidEndDecelerating:scrollView];
 }
 
 - (void)gridTapGestureRecognized:(UITapGestureRecognizer *)gesture {

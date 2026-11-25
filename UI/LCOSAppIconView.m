@@ -43,10 +43,12 @@
         self.nameLabel = [[UILabel alloc] initWithFrame:CGRectZero];
         self.nameLabel.text = appModel.displayName;
         self.nameLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
-        self.nameLabel.textColor = [UIColor labelColor];
+        self.nameLabel.textColor = [UIColor whiteColor];
+        self.nameLabel.shadowColor = [UIColor colorWithWhite:0 alpha:0.65];
+        self.nameLabel.shadowOffset = CGSizeMake(0, 1);
         self.nameLabel.textAlignment = NSTextAlignmentCenter;
         self.nameLabel.lineBreakMode = NSLineBreakByTruncatingTail;
-        self.nameLabel.numberOfLines = 2;
+        self.nameLabel.numberOfLines = 1;
         self.nameLabel.backgroundColor = [UIColor clearColor];
         self.nameLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
         [self addSubview:self.nameLabel];
@@ -60,16 +62,11 @@
     CGFloat w = self.bounds.size.width;
     CGFloat h = self.bounds.size.height;
     
-    // iOS 26 icon layout: 60x60 icon at top, name below (tight)
-    CGFloat iconSize = 60.0;
-    CGFloat iconX = (w - iconSize) / 2;
-    CGFloat iconY = 2;
-    self.iconImageView.frame = CGRectMake(iconX, iconY, iconSize, iconSize);
-    
-    // Name label below icon (tight 2pt gap)
-    CGFloat labelY = iconY + iconSize + 2;
-    CGFloat labelH = h - labelY - 2;
-    self.nameLabel.frame = CGRectMake(0, labelY, w, labelH);
+    CGFloat iconSize = MIN(60.0, MIN(w, h - 20.0));
+    self.iconImageView.autoresizingMask = UIViewAutoresizingNone;
+    self.nameLabel.autoresizingMask = UIViewAutoresizingNone;
+    self.iconImageView.frame = CGRectMake((w - iconSize) / 2.0, 0, iconSize, iconSize);
+    self.nameLabel.frame = CGRectMake(0, iconSize + 3.0, w, 16.0);
 }
 
 @end

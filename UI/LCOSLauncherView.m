@@ -104,7 +104,7 @@
     CGFloat dockSideInset = 16.0;
     CGFloat dockBottomGap = bottomInset > 0 ? bottomInset * 0.6 : 8.0;
     if (self.grid) {
-        self.grid.frame = CGRectMake(0, 0, w, h - dockHeight - dockBottomGap - 12);
+        self.grid.frame = CGRectMake(0, 0, w, h - dockHeight - dockBottomGap);
     }
     if (self.dock) {
         self.dock.frame = CGRectMake(dockSideInset, h - dockHeight - dockBottomGap, w - dockSideInset * 2, dockHeight);
