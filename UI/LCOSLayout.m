@@ -7,7 +7,8 @@ static NSString *const kPrefix = @"LCOSLayout.";
 static NSDictionary<NSString *, NSNumber *> *LCOSDefaults(void) {
     return @{ @"iconSize": @68.5, @"cornerRadius": @20, @"labelGap": @5,
               @"topInset": @94.4, @"bottomInset": @40, @"rowSpacing": @17,
-              @"columnSpacing": @30, @"pageSize": @6, @"pageOffset": @0 };
+              @"columnSpacing": @30, @"pageSize": @6, @"pageOffset": @0,
+              @"sheetRadius": @24 };
 }
 
 @implementation LCOSLayout
@@ -18,7 +19,7 @@ static NSDictionary<NSString *, NSNumber *> *LCOSDefaults(void) {
         @"labelGap": @[@0, @24], @"topInset": @[@0, @200],
         @"bottomInset": @[@0, @120], @"rowSpacing": @[@0, @60],
         @"columnSpacing": @[@0, @60], @"pageSize": @[@4, @16],
-        @"pageOffset": @[@-60, @60]
+        @"pageOffset": @[@-60, @60], @"sheetRadius": @[@0, @60]
     };
     NSArray<NSNumber *> *range = ranges[key];
     if (!range) return NO;
@@ -60,9 +61,9 @@ static NSDictionary<NSString *, NSNumber *> *LCOSDefaults(void) {
 }
 + (NSString *)summary {
     NSDictionary *v = self.values;
-    return [NSString stringWithFormat:@"iconSize=%.1f, cornerRadius=%.1f, labelGap=%.1f, topInset=%.1f, bottomInset=%.1f, rowSpacing=%.1f, columnSpacing=%.1f, pageSize=%.1f, pageOffset=%.1f",
+    return [NSString stringWithFormat:@"iconSize=%.1f, cornerRadius=%.1f, labelGap=%.1f, topInset=%.1f, bottomInset=%.1f, rowSpacing=%.1f, columnSpacing=%.1f, pageSize=%.1f, pageOffset=%.1f, sheetRadius=%.1f",
         [v[@"iconSize"] doubleValue], [v[@"cornerRadius"] doubleValue], [v[@"labelGap"] doubleValue],
         [v[@"topInset"] doubleValue], [v[@"bottomInset"] doubleValue], [v[@"rowSpacing"] doubleValue],
-        [v[@"columnSpacing"] doubleValue], [v[@"pageSize"] doubleValue], [v[@"pageOffset"] doubleValue]];
+        [v[@"columnSpacing"] doubleValue], [v[@"pageSize"] doubleValue], [v[@"pageOffset"] doubleValue], [v[@"sheetRadius"] doubleValue]];
 }
 @end

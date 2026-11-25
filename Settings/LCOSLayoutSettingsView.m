@@ -17,11 +17,11 @@
     [super viewDidLoad];
     self.view.backgroundColor = UIColor.clearColor;
     self.keys = @[@"iconSize", @"cornerRadius", @"labelGap", @"topInset", @"bottomInset",
-                  @"rowSpacing", @"columnSpacing", @"pageSize", @"pageOffset"];
+                  @"rowSpacing", @"columnSpacing", @"pageSize", @"pageOffset", @"sheetRadius"];
     self.names = @[@"图标大小", @"图标四个角弧度", @"图标名字上下距离", @"图标最上面距离", @"图标最下面距离",
-                   @"图标上下间距", @"图标左右间距", @"页面指示器大小", @"指示器上下位置"];
-    self.mins = @[@40, @0, @0, @0, @0, @0, @0, @4, @-60];
-    self.maxs = @[@100, @30, @24, @200, @120, @60, @60, @16, @60];
+                   @"图标上下间距", @"图标左右间距", @"页面指示器大小", @"指示器上下位置", @"桌面滑动顶部弧度"];
+    self.mins = @[@40, @0, @0, @0, @0, @0, @0, @4, @-60, @0];
+    self.maxs = @[@100, @30, @24, @200, @120, @60, @60, @16, @60, @60];
     self.valueLabels = [NSMutableArray array];
     self.sliders = [NSMutableArray array];
 

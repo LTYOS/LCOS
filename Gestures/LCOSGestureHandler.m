@@ -4,7 +4,6 @@
 //
 
 #import "LCOSGestureHandler.h"
-#import "LCOSFloatingButton.h"
 #import "LCOSSettingsView.h"
 #import "LCOSLogManager.h"
 #import "LCOSCore.h"

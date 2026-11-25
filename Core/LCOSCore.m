@@ -4,19 +4,37 @@
 //
 
 #import "LCOSCore.h"
-#import "LCOSFloatingButton.h"
 #import "LCOSLauncherView.h"
 #import "LCOSGestureHandler.h"
 #import "LCOSLogManager.h"
+#import "LCOSNavigationBar.h"
+#import "LCOSBackgroundView.h"
+#import "LCOSAppModel.h"
+#import "LCOSLayout.h"
 #import <objc/runtime.h>
 
 // Pass-through window - like LCOrbitPassThroughWindow
 // Transparent regions pass touches to underlying windows
 // BUT gesture recognizers on the window work for multi-finger gestures when appropriate
-// AND visible child view controllers (launcher, floating button) receive touches normally
+// Visible launcher, navigation, and background views receive touches normally
 @interface LCOSPassThroughWindow : UIWindow
 @property (nonatomic, weak) UIViewController *launcherContainer; // For touch handling when launcher is visible
-@property (nonatomic, weak) LCOSFloatingButton *floatingButton; // For touch handling
+@property (nonatomic, weak) LCOSBackgroundView *backgroundView;
+@end
+
+@interface LCOSNavigationTouchZone : UIControl
+@property (nonatomic, copy) void (^onPan)(UIPanGestureRecognizer *gesture);
+@end
+@implementation LCOSNavigationTouchZone
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
+        [self addGestureRecognizer:pan];
+    }
+    return self;
+}
+- (void)handlePan:(UIPanGestureRecognizer *)gesture { if (self.onPan) self.onPan(gesture); }
 @end
 
 @implementation LCOSPassThroughWindow
@@ -25,6 +43,13 @@
         [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSOverlayScreenTouchedNotification" object:nil];
     }
     
+    if (self.backgroundView && !self.backgroundView.hidden && self.backgroundView.alpha > 0.01) {
+        return [super hitTest:point withEvent:event];
+    }
+    // The right navigation strip remains interactive on the native host UI.
+    if (!self.launcherContainer && point.x >= self.bounds.size.width - 32.0) {
+        return [super hitTest:point withEvent:event];
+    }
     // 1. If launcher container is visible and touch is on it, let it handle normally
     if (self.launcherContainer && [self.launcherContainer isViewLoaded]) {
         UIView *launcherView = self.launcherContainer.view;
@@ -34,17 +59,6 @@
                 [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS PassThroughWindow: hitTest -> launcherContainer (point=%@)", NSStringFromCGPoint(point)]];
                 return [super hitTest:point withEvent:event]; // Normal hit test for launcher
             }
-        }
-    }
-    
-    // 2. If floating button is visible and touch is on it, let it handle
-    if (self.floatingButton && !self.floatingButton.hidden && self.floatingButton.alpha > 0.01) {
-        CGPoint localPoint = [self.floatingButton convertPoint:point fromView:self];
-        // Use expanded bounds like floatingButton's hitTest
-        CGRect expandedBounds = CGRectInset(self.floatingButton.bounds, -20, -20);
-        if (CGRectContainsPoint(expandedBounds, localPoint)) {
-            [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS PassThroughWindow: hitTest -> floatingButton (point=%@)", NSStringFromCGPoint(point)]];
-            return [super hitTest:point withEvent:event]; // Normal hit test for button
         }
     }
     
@@ -107,6 +121,10 @@ static BOOL LCOSIsLiveContainerHost(void) {
 @property (nonatomic, assign) BOOL dockTransitionActive;
 @property (nonatomic, assign) BOOL launcherTransitionActive;
 @property (nonatomic, assign) CGPoint dockGestureStart;
+@property (nonatomic, strong) LCOSNavigationBar *navigationBar;
+@property (nonatomic, strong) LCOSBackgroundView *backgroundView;
+@property (nonatomic, strong) LCOSNavigationTouchZone *rightEdgeZone;
+@property (nonatomic, assign) BOOL isBackgroundVisible;
 @end
 
 // Hook UIWindow.makeKeyAndVisible: as soon as LiveContainer's native window
@@ -189,7 +207,6 @@ static void lcos_makeKeyAndVisible(id self, SEL _cmd) {
 // Persistence key for launcher state
 static NSString *const kLCOSLauncherVisibleKey = @"LCOSLauncherVisible";
 static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
-static NSString *const kLCOSUsesGestureLauncherKey = @"LCOSUsesGestureLauncher";
 
 // Auto-restore defaults to YES unless explicitly disabled.
 static BOOL LCOSAutoRestoreEnabled(void) {
@@ -261,14 +278,6 @@ static BOOL LCOSAutoRestoreEnabled(void) {
             rootVC.view.backgroundColor = [UIColor clearColor];
             self.overlayWindow.rootViewController = rootVC;
             
-            // Create floating button
-            self.floatingButton = [LCOSFloatingButton sharedButton];
-            
-            // Set floatingButton on pass-through window for touch handling
-            if ([self.overlayWindow isKindOfClass:[LCOSPassThroughWindow class]]) {
-                ((LCOSPassThroughWindow *)self.overlayWindow).floatingButton = self.floatingButton;
-            }
-            
             [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSCore: overlayWindow created level=%ld", (long)self.overlayWindow.windowLevel]];
         }
     } else {
@@ -282,26 +291,20 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         rootVC.view.backgroundColor = [UIColor clearColor];
         self.overlayWindow.rootViewController = rootVC;
         
-        self.floatingButton = [LCOSFloatingButton sharedButton];
-        
-        if ([self.overlayWindow isKindOfClass:[LCOSPassThroughWindow class]]) {
-            ((LCOSPassThroughWindow *)self.overlayWindow).floatingButton = self.floatingButton;
-        }
     }
     
     // Register gesture recognizers on overlay window (three-finger long press for settings)
     [self registerGesturesOnOverlayWindow];
     [self installNativeDockGestureIfNeeded];
-    [self updateLauncherEntryMode];
+    [self setupNavigationAndBackground];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(layoutRadiusChanged) name:LCOSLayoutDidChangeNotification object:nil];
+    [self updateInteractionState];
     
     // Restore launcher state: if auto-restore enabled and was visible, show immediately
     BOOL wasVisible = LCOSAutoRestoreEnabled() && [self loadLauncherState];
     if (wasVisible) {
         [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Restoring launcher state - showing launcher immediately"];
         [self showLauncherImmediately];
-    } else {
-        // Show floating button
-        [self showFloatingButton];
     }
     
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: initialize COMPLETE"];
@@ -399,7 +402,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     
     [self setLauncherRoundedCorners:self.dockTransitionActive];
     // Add launcher as child view controller (for proper safeAreaLayoutGuide)
-    // Add launcherContainer to rootVC view (floatingButton is also on rootVC view)
+    // Add launcherContainer to rootVC view
     [self.overlayWindow.rootViewController addChildViewController:self.launcherContainer];
     [self.overlayWindow.rootViewController.view addSubview:self.launcherContainer.view];
     [self.overlayWindow.rootViewController.view bringSubviewToFront:self.launcherContainer.view];
@@ -456,16 +459,11 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         [self.launcherContainer.view addGestureRecognizer:self.launcherDismissGesture];
     }
 
-    // Keep the same button above the launcher: tap now closes the desktop.
-    self.floatingButton.hidden = [self usesGestureLauncher];
-    if (![self usesGestureLauncher]) {
-        [self.floatingButton showOnWindow:self.overlayWindow];
-        [self.overlayWindow.rootViewController.view bringSubviewToFront:self.floatingButton];
-    }
-    
+    [self.overlayWindow.rootViewController.view bringSubviewToFront:self.rightEdgeZone];
+    [self.overlayWindow.rootViewController.view bringSubviewToFront:self.navigationBar];
     // Save state
     [self saveLauncherState];
-    [self updateLauncherEntryMode];
+    [self updateInteractionState];
 }
 
 - (void)hideLauncher {
@@ -504,43 +502,117 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         self.overlayLongPressGesture.enabled = YES;
         [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: overlayLongPressGesture enabled (launcher hidden)"];
         
-        // Show floating button again when it is the selected entry mode.
-        self.floatingButton.hidden = [self usesGestureLauncher];
-        if (![self usesGestureLauncher]) [self.floatingButton showOnWindow:self.overlayWindow];
-        
         // Save state
         [self saveLauncherState];
         self.launcherTransitionActive = NO;
-        [self updateLauncherEntryMode];
+        [self.overlayWindow.rootViewController.view bringSubviewToFront:self.rightEdgeZone];
+        [self.overlayWindow.rootViewController.view bringSubviewToFront:self.navigationBar];
+        [self updateInteractionState];
 }
 
-- (BOOL)usesGestureLauncher {
-    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-    if ([defaults objectForKey:kLCOSUsesGestureLauncherKey] == nil) return YES;
-    return [defaults boolForKey:kLCOSUsesGestureLauncherKey];
-}
-
-- (void)setUsesGestureLauncher:(BOOL)enabled {
-    [NSUserDefaults.standardUserDefaults setBool:enabled forKey:kLCOSUsesGestureLauncherKey];
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [self updateLauncherEntryMode];
-    });
-}
-
-- (void)updateLauncherEntryMode {
-    BOOL gestures = [self usesGestureLauncher];
-    self.floatingButton.hidden = gestures;
-    self.nativeDockGesture.enabled = gestures && (!self.isLauncherVisible || self.dockTransitionActive);
-    self.launcherDismissGesture.enabled = gestures && self.isLauncherVisible && !self.dockTransitionActive;
+- (void)updateInteractionState {
+    self.nativeDockGesture.enabled = !self.isLauncherVisible && !self.isBackgroundVisible;
+    self.launcherDismissGesture.enabled = self.isLauncherVisible && !self.dockTransitionActive && !self.isBackgroundVisible;
+    self.rightEdgeZone.hidden = self.isBackgroundVisible;
     self.overlayWindow.hidden = NO;
-    if (gestures) {
-        [self installNativeDockGestureIfNeeded];
-    } else {
-        [self.floatingButton showOnWindow:self.overlayWindow];
-        [self.overlayWindow.rootViewController.view bringSubviewToFront:self.floatingButton];
+}
+
+- (void)setupNavigationAndBackground {
+    if (self.navigationBar) return;
+    UIView *root = self.overlayWindow.rootViewController.view;
+    self.navigationBar = [[LCOSNavigationBar alloc] initWithFrame:CGRectMake(root.bounds.size.width - 52, root.bounds.size.height * 0.32, 52, 220)];
+    self.navigationBar.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
+    self.navigationBar.alpha = 0.0;
+    self.navigationBar.onHome = ^{ [self hideBackground]; };
+    self.navigationBar.onBackground = ^{ [self showBackground]; };
+    self.navigationBar.onSettings = ^{ [self showSettings]; };
+    [root addSubview:self.navigationBar];
+    self.rightEdgeZone = [[LCOSNavigationTouchZone alloc] initWithFrame:CGRectMake(root.bounds.size.width - 32, 0, 32, root.bounds.size.height)];
+    self.rightEdgeZone.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleHeight;
+    self.rightEdgeZone.backgroundColor = UIColor.clearColor;
+    __weak typeof(self) weakSelf = self;
+    self.rightEdgeZone.onPan = ^(UIPanGestureRecognizer *gesture) { [weakSelf handleRightEdgeGesture:gesture]; };
+    [root addSubview:self.rightEdgeZone];
+    [root bringSubviewToFront:self.navigationBar];
+}
+
+- (void)handleRightEdgeGesture:(UIPanGestureRecognizer *)gesture {
+    CGPoint point = [gesture locationInView:self.overlayWindow];
+    if (gesture.state == UIGestureRecognizerStateBegan) {
+        if (point.x < self.overlayWindow.bounds.size.width - 32.0) {
+            gesture.enabled = NO;
+            gesture.enabled = YES;
+            return;
+        }
+        self.navigationBar.alpha = 1.0;
     }
-    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
-        @"LCOSCore: launcher entry mode = %@", gestures ? @"gestures" : @"floating button"]];
+    if (gesture.state == UIGestureRecognizerStateChanged) {
+        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(fadeNavigationBar) object:nil];
+    }
+    if (gesture.state == UIGestureRecognizerStateEnded) {
+        CGFloat horizontal = [gesture translationInView:self.overlayWindow].x;
+        if (horizontal < -55.0) {
+            [self showBackground];
+        } else {
+            [self performSelector:@selector(fadeNavigationBar) withObject:nil afterDelay:1.5];
+        }
+    }
+}
+
+- (void)fadeNavigationBar {
+    [UIView animateWithDuration:0.4 animations:^{ self.navigationBar.alpha = 0.35; }];
+}
+
+- (void)showBackground {
+    if (self.isBackgroundVisible) return;
+    if (!self.isLauncherVisible) [self showLauncher];
+    if (!self.backgroundView) {
+        self.backgroundView = [[LCOSBackgroundView alloc] initWithFrame:self.overlayWindow.rootViewController.view.bounds];
+        self.backgroundView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        self.backgroundView.onClose = ^{ [self hideBackground]; };
+        [self.backgroundView setApps:[LCOSAppModel allInstalledApps]];
+    }
+    if (!self.backgroundView.superview) [self.overlayWindow.rootViewController.view addSubview:self.backgroundView];
+    if ([self.overlayWindow isKindOfClass:LCOSPassThroughWindow.class]) {
+        ((LCOSPassThroughWindow *)self.overlayWindow).backgroundView = self.backgroundView;
+    }
+    [self.overlayWindow.rootViewController.view bringSubviewToFront:self.backgroundView];
+    [self.overlayWindow.rootViewController.view bringSubviewToFront:self.navigationBar];
+    self.backgroundView.hidden = NO;
+    self.backgroundView.alpha = 0;
+    self.backgroundView.transform = CGAffineTransformMakeTranslation(44, 0);
+    self.isBackgroundVisible = YES;
+    [self updateInteractionState];
+    [UIView animateWithDuration:0.25 animations:^{
+        self.backgroundView.alpha = 1;
+        self.backgroundView.transform = CGAffineTransformIdentity;
+    }];
+}
+
+- (void)hideBackground {
+    if (!self.isBackgroundVisible) return;
+    [UIView animateWithDuration:0.22 animations:^{
+        self.backgroundView.alpha = 0;
+        self.backgroundView.transform = CGAffineTransformMakeTranslation(44, 0);
+    } completion:^(BOOL finished) {
+        self.backgroundView.hidden = YES;
+        [self.backgroundView removeFromSuperview];
+        if ([self.overlayWindow isKindOfClass:LCOSPassThroughWindow.class]) {
+            ((LCOSPassThroughWindow *)self.overlayWindow).backgroundView = nil;
+        }
+        self.isBackgroundVisible = NO;
+        [self updateInteractionState];
+    }];
+}
+
+- (void)layoutRadiusChanged {
+    if (self.launcherTransitionActive || self.dockTransitionActive) [self setLauncherRoundedCorners:YES];
+}
+
+- (void)showSettings {
+    Class settingsClass = NSClassFromString(@"LCOSSettingsView");
+    if (!settingsClass || self.overlayWindow.rootViewController.presentedViewController) return;
+    [self.overlayWindow.rootViewController presentViewController:[[settingsClass alloc] init] animated:YES completion:nil];
 }
 
 - (void)installNativeDockGestureIfNeeded {
@@ -570,7 +642,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     gesture.delegate = self;
     [dock addGestureRecognizer:gesture];
     self.nativeDockGesture = gesture;
-    gesture.enabled = [self usesGestureLauncher] && !self.isLauncherVisible;
+    gesture.enabled = !self.isLauncherVisible;
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: native Dock long-press upward gesture installed"];
 }
 
@@ -584,7 +656,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 }
 
 - (void)handleNativeDockGesture:(UILongPressGestureRecognizer *)gesture {
-    if (![self usesGestureLauncher] || (self.isLauncherVisible && !self.dockTransitionActive)) return;
+    if (self.isBackgroundVisible || (self.isLauncherVisible && !self.dockTransitionActive)) return;
     CGPoint location = [gesture locationInView:self.overlayWindow];
     if (gesture.state == UIGestureRecognizerStateBegan) {
         [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSLauncherGestureActive" object:@YES];
@@ -618,7 +690,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 
 - (void)setLauncherRoundedCorners:(BOOL)rounded {
     UIView *view = self.launcherContainer.view;
-    view.layer.cornerRadius = rounded ? 24.0 : 0.0;
+    view.layer.cornerRadius = rounded ? [LCOSLayout value:@"sheetRadius"] : 0.0;
     view.layer.cornerCurve = kCACornerCurveContinuous;
     view.layer.maskedCorners = rounded ? (kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner) : 0;
     view.layer.masksToBounds = rounded;
@@ -639,12 +711,12 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         self.launcherTransitionActive = NO;
         self.isLauncherVisible = YES;
         [self saveLauncherState];
-        [self updateLauncherEntryMode];
+        [self updateInteractionState];
     }];
 }
 
 - (void)handleLauncherDismissGesture:(UIPanGestureRecognizer *)gesture {
-    if (![self usesGestureLauncher] || !self.isLauncherVisible) return;
+    if (self.isBackgroundVisible || !self.isLauncherVisible) return;
     if (gesture.state == UIGestureRecognizerStateBegan) {
         [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSLauncherGestureActive" object:@YES];
         [self setLauncherRoundedCorners:YES];
@@ -680,27 +752,6 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     }
 }
 
-- (void)showFloatingButton {
-    [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: showFloatingButton"];
-    
-    if (!self.overlayWindow || !self.overlayWindow.rootViewController) {
-        [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: showFloatingButton - no overlayWindow/rootVC, retrying"];
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            [self showFloatingButton];
-        });
-        return;
-    }
-    
-    self.overlayWindow.hidden = NO;
-    self.floatingButton.hidden = [self usesGestureLauncher];
-    if (![self usesGestureLauncher]) [self.floatingButton showOnWindow:self.overlayWindow];
-}
-
-- (void)hideFloatingButton {
-    [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: hideFloatingButton"];
-    [self.floatingButton hide];
-    self.overlayWindow.hidden = YES;
-}
 
 // UIGestureRecognizerDelegate
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
