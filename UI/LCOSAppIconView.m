@@ -61,8 +61,7 @@
 - (void)layoutSubviews {
     [super layoutSubviews];
     CGFloat w = self.bounds.size.width;
-    CGFloat h = self.bounds.size.height;
-    
+
     CGFloat iconSize = MIN([LCOSLayout value:@"iconSize"], w);
     self.iconImageView.autoresizingMask = UIViewAutoresizingNone;
     self.nameLabel.autoresizingMask = UIViewAutoresizingNone;

@@ -152,10 +152,20 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
 }
 
 - (void)openLayoutSettings {
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Layout: opening translucent desktop controls"];
     LCOSLayoutSettingsView *controller = [[LCOSLayoutSettingsView alloc] init];
     controller.modalPresentationStyle = UIModalPresentationOverFullScreen;
     controller.modalTransitionStyle = UIModalTransitionStyleCrossDissolve;
-    [self presentViewController:controller animated:YES completion:nil];
+    UIViewController *presenter = self.presentingViewController;
+    if (!presenter) {
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS Layout: no desktop presenter available"];
+        return;
+    }
+    [self dismissViewControllerAnimated:NO completion:^{
+        [presenter presentViewController:controller animated:YES completion:^{
+            [[LCOSLogManager sharedManager] forceLog:@"LCOS Layout: controls presented over desktop"];
+        }];
+    }];
 }
 
 - (void)chooseWallpaper {

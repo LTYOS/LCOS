@@ -1,4 +1,5 @@
 #import "LCOSLayout.h"
+#import <math.h>
 
 NSNotificationName const LCOSLayoutDidChangeNotification = @"LCOSLayoutDidChangeNotification";
 static NSString *const kPrefix = @"LCOSLayout.";
@@ -10,19 +11,46 @@ static NSDictionary<NSString *, NSNumber *> *LCOSDefaults(void) {
 }
 
 @implementation LCOSLayout
+
++ (BOOL)getMinimum:(CGFloat *)minimum maximum:(CGFloat *)maximum forKey:(NSString *)key {
+    NSDictionary<NSString *, NSArray<NSNumber *> *> *ranges = @{
+        @"iconSize": @[@40, @100], @"cornerRadius": @[@0, @30],
+        @"labelGap": @[@0, @24], @"topInset": @[@0, @200],
+        @"bottomInset": @[@0, @120], @"rowSpacing": @[@0, @60],
+        @"columnSpacing": @[@0, @60], @"pageSize": @[@4, @16],
+        @"pageOffset": @[@-60, @60]
+    };
+    NSArray<NSNumber *> *range = ranges[key];
+    if (!range) return NO;
+    *minimum = range[0].doubleValue;
+    *maximum = range[1].doubleValue;
+    return YES;
+}
+
++ (CGFloat)sanitizedValue:(CGFloat)value forKey:(NSString *)key {
+    CGFloat minimum = 0, maximum = 0;
+    if (![self getMinimum:&minimum maximum:&maximum forKey:key] || !isfinite(value)) {
+        return [LCOSDefaults()[key] doubleValue];
+    }
+    return MIN(maximum, MAX(minimum, value));
+}
+
 + (NSDictionary<NSString *,NSNumber *> *)values {
     NSMutableDictionary *values = [LCOSDefaults() mutableCopy];
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     for (NSString *key in values) {
         NSString *storedKey = [kPrefix stringByAppendingString:key];
-        if ([defaults objectForKey:storedKey]) values[key] = @([defaults doubleForKey:storedKey]);
+        if ([defaults objectForKey:storedKey]) {
+            values[key] = @([self sanitizedValue:[defaults doubleForKey:storedKey] forKey:key]);
+        }
     }
     return values;
 }
 + (CGFloat)value:(NSString *)key { return [self values][key].doubleValue; }
 + (void)setValue:(CGFloat)value forKey:(NSString *)key {
     if (!LCOSDefaults()[key]) return;
-    [NSUserDefaults.standardUserDefaults setDouble:value forKey:[kPrefix stringByAppendingString:key]];
+    [NSUserDefaults.standardUserDefaults setDouble:[self sanitizedValue:value forKey:key]
+                                            forKey:[kPrefix stringByAppendingString:key]];
     [NSNotificationCenter.defaultCenter postNotificationName:LCOSLayoutDidChangeNotification object:nil];
 }
 + (void)reset {

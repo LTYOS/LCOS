@@ -122,19 +122,37 @@ static NSString *const kLCOSAppsDirectory = @"Applications";
     if (![containerClass instancesRespondToSelector:initSelector] ||
         ![containerClass instancesRespondToSelector:makeSelector]) return NO;
 
+    Class appInfoClass = NSClassFromString(@"LCAppInfo");
+    SEL setContainersSelector = NSSelectorFromString(@"setContainers:");
+    SEL setDataUUIDSelector = NSSelectorFromString(@"setDataUUID:");
+    if (![appInfoClass instancesRespondToSelector:setContainersSelector] ||
+        ![appInfoClass instancesRespondToSelector:setDataUUIDSelector]) return NO;
+
     NSString *uuid = NSUUID.UUID.UUIDString;
     id container = ((id (*)(id, SEL))objc_msgSend)(containerClass, @selector(alloc));
     container = ((id (*)(id, SEL, NSString *, NSString *, BOOL))objc_msgSend)(container,
         initSelector, uuid, uuid, NO);
-    ((void (*)(id, SEL, NSString *, NSInteger))objc_msgSend)(container,
-        makeSelector, _bundleIdentifier, 0);
     if (!container) return NO;
 
+    id appInfo = ((id (*)(id, SEL))objc_msgSend)(appInfoClass, @selector(alloc));
+    appInfo = ((id (*)(id, SEL, NSString *))objc_msgSend)(appInfo, @selector(initWithBundlePath:), _bundlePath);
+    if (!appInfo) return NO;
+
+    // Match LCAppModel.runApp: save the container object first, create its
+    // metadata, then select its UUID. Calling the setter through KVC also
+    // preserves Swift/Objective-C selector bridging on different LC builds.
+    [appInfo setValue:@[container] forKey:@"containers"];
+    ((void (*)(id, SEL, NSString *, NSInteger))objc_msgSend)(container,
+        makeSelector, _bundleIdentifier, 0);
+    [appInfo setValue:uuid forKey:@"dataUUID"];
+
     NSString *plistPath = [_bundlePath stringByAppendingPathComponent:@"LCAppInfo.plist"];
-    NSMutableDictionary *info = [NSMutableDictionary dictionaryWithContentsOfFile:plistPath] ?: [NSMutableDictionary dictionary];
-    info[@"LCDataUUID"] = uuid;
-    info[@"LCContainers"] = @[@{ @"folderName": uuid, @"name": uuid }];
-    if (![info writeToFile:plistPath atomically:YES]) return NO;
+    NSDictionary *savedInfo = [NSDictionary dictionaryWithContentsOfFile:plistPath];
+    if (![savedInfo[@"LCDataUUID"] isEqualToString:uuid]) {
+        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
+            @"LCOSAppModel: container save failed for %@", _displayName]];
+        return NO;
+    }
     _containerFolderName = uuid;
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
         @"LCOSAppModel: initialized container %@ for %@", uuid, _displayName]];

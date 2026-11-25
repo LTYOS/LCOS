@@ -136,6 +136,9 @@
 
 - (void)sliderChanged:(UISlider *)slider {
     NSInteger i = slider.tag;
+    if (i < 0 || i >= (NSInteger)self.keys.count) return;
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
+        @"LCOS Layout: slider %@ = %.1f", self.keys[i], slider.value]];
     [LCOSLayout setValue:slider.value forKey:self.keys[i]];
     [self updateLabelAt:i];
 }

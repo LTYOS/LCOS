@@ -20,6 +20,7 @@
 @property (nonatomic, assign) NSInteger itemsPerPage;
 @property (nonatomic, strong) NSArray<LCOSAppModel *> *allApps;
 @property (nonatomic, assign) CGSize lastLayoutSize;
+@property (nonatomic, copy) NSDictionary<NSString *, NSNumber *> *lastLayoutValues;
 @end
 
 @implementation LCOSGrid
@@ -66,7 +67,7 @@
         self.pageControl.hidesForSinglePage = YES;
         self.pageControl.userInteractionEnabled = NO;
         self.pageControl.currentPageIndicatorTintColor = UIColor.whiteColor;
-    self.pageControl.pageIndicatorTintColor = [UIColor colorWithWhite:1.0 alpha:0.35];
+        self.pageControl.pageIndicatorTintColor = [UIColor colorWithWhite:1.0 alpha:0.35];
         self.pageControl.preferredIndicatorImage = [UIImage systemImageNamed:@"circle.fill"];
         [self addSubview:self.pageControl];
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(layoutSettingsChanged) name:LCOSLayoutDidChangeNotification object:nil];
@@ -80,6 +81,7 @@
     [self.pages removeAllObjects];
     [self.currentPageItems removeAllObjects];
     self.lastLayoutSize = CGSizeZero;
+    self.lastLayoutValues = nil;
 
     if (apps.count == 0) {
         self.scrollView.contentSize = CGSizeZero;
@@ -112,11 +114,27 @@
 }
 
 - (void)dealloc {
+    [NSObject cancelPreviousPerformRequestsWithTarget:self];
     [NSNotificationCenter.defaultCenter removeObserver:self];
 }
 
 - (void)layoutSettingsChanged {
-    [self setApps:self.allApps];
+    // Sliders can send dozens of updates per second. Coalesce them into one
+    // layout pass and keep every existing icon/page view alive.
+    [NSObject cancelPreviousPerformRequestsWithTarget:self
+                                             selector:@selector(applyLayoutSettings)
+                                               object:nil];
+    [self performSelector:@selector(applyLayoutSettings) withObject:nil afterDelay:0.05];
+}
+
+- (void)applyLayoutSettings {
+    if (self.pages.count == 0) return;
+    self.lastLayoutValues = nil;
+    [self layoutPagesIfNeeded:NO];
+    for (UIView *page in self.pages) {
+        for (UIView *icon in page.subviews) [icon setNeedsLayout];
+    }
+    [[LCOSLogManager sharedManager] forceLog:@"LCOSGrid: live layout applied without rebuilding icons"];
 }
 
 - (void)layoutSubviews {
@@ -127,15 +145,19 @@
 
 - (void)layoutPagesIfNeeded:(BOOL)force {
     if (CGRectIsEmpty(self.bounds) || self.pages.count == 0) return;
-    if (!force && CGSizeEqualToSize(self.lastLayoutSize, self.bounds.size)) return;
+    NSDictionary<NSString *, NSNumber *> *layoutValues = [LCOSLayout values];
+    if (!force && CGSizeEqualToSize(self.lastLayoutSize, self.bounds.size) &&
+        [self.lastLayoutValues isEqualToDictionary:layoutValues]) return;
     self.lastLayoutSize = self.bounds.size;
+    self.lastLayoutValues = layoutValues;
 
     CGFloat width = self.bounds.size.width;
-    CGFloat height = self.bounds.size.height - [LCOSLayout value:@"bottomInset"];
+    CGFloat height = MAX(1.0, self.bounds.size.height - [LCOSLayout value:@"bottomInset"]);
     CGFloat iconSize = [LCOSLayout value:@"iconSize"];
-    self.itemWidth = MAX(iconSize, MIN(88.0, (width - 40.0) / self.columns));
-    self.itemHeight = iconSize + [LCOSLayout value:@"labelGap"] + 18.0;
     CGFloat columnSpacing = [LCOSLayout value:@"columnSpacing"];
+    CGFloat availableWidth = MAX(4.0, (width - 32.0 - (self.columns - 1) * columnSpacing) / self.columns);
+    self.itemWidth = MAX(1.0, MIN(availableWidth, MAX(iconSize, 72.0)));
+    self.itemHeight = MAX(1.0, iconSize + [LCOSLayout value:@"labelGap"] + 18.0);
     CGFloat rowSpacing = [LCOSLayout value:@"rowSpacing"];
     CGFloat topInset = [LCOSLayout value:@"topInset"];
     CGFloat gridWidth = self.columns * self.itemWidth + (self.columns - 1) * columnSpacing;
