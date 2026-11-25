@@ -80,6 +80,24 @@
 
 static LCOSCore *_sharedInstance = nil;
 
+// The global tweak folder is injected into every guest app too. LCOS UI is
+// host-only until the future background/gesture layer explicitly opts in.
+static BOOL LCOSIsLiveContainerHost(void) {
+    Class sharedUtils = NSClassFromString(@"LCSharedUtils");
+    SEL mainBundleSelector = NSSelectorFromString(@"lcMainBundle");
+    SEL guestInfoSelector = NSSelectorFromString(@"guestAppInfo");
+    if (![sharedUtils respondsToSelector:mainBundleSelector] ||
+        ![sharedUtils respondsToSelector:guestInfoSelector]) return NO;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+    NSBundle *hostBundle = [sharedUtils performSelector:mainBundleSelector];
+    NSDictionary *guestInfo = [sharedUtils performSelector:guestInfoSelector];
+#pragma clang diagnostic pop
+    if (![hostBundle isKindOfClass:NSBundle.class]) return NO;
+    return [hostBundle.bundleIdentifier isEqualToString:NSBundle.mainBundle.bundleIdentifier] &&
+           (![guestInfo isKindOfClass:NSDictionary.class] || guestInfo.count == 0);
+}
+
 // Class extension for private properties
 @interface LCOSCore ()
 @property (nonatomic, strong) UILongPressGestureRecognizer *overlayLongPressGesture;
@@ -114,7 +132,8 @@ static void lcos_makeKeyAndVisible(id self, SEL _cmd) {
 @implementation LCOSCore
 
 + (void)load {
-    [[LCOSLogManager sharedManager] forceLog:@"LCOS load: +load invoked"];
+    if (!LCOSIsLiveContainerHost()) return;
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS load: +load invoked in LiveContainer host"];
     static dispatch_once_t initializationToken;
     dispatch_once(&initializationToken, ^{
         // Swizzle makeKeyAndVisible to cover the native window before it renders.
@@ -188,7 +207,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 
 - (void)initialize {
     // Idempotent: scene notification + async + hook may all call this.
-    if (self.overlayWindow) return;
+    if (!LCOSIsLiveContainerHost() || self.overlayWindow) return;
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: initialize START"];
     
     // Check if window scene is ready
@@ -387,8 +406,9 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     
     self.isLauncherVisible = YES;
     
-    // Hide floating button when launcher is shown
-    self.floatingButton.hidden = YES;
+    // Keep the same button above the launcher: tap now closes the desktop.
+    [self.floatingButton showOnWindow:self.overlayWindow];
+    [self.overlayWindow.rootViewController.view bringSubviewToFront:self.floatingButton];
     
     // Save state
     [self saveLauncherState];
