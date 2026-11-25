@@ -192,11 +192,15 @@
     [self.scrollView setContentOffset:CGPointMake(page * self.bounds.size.width, 0) animated:animated];
 }
 
-- (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView {
-    if (scrollView.bounds.size.width <= 0) return;
-    NSInteger page = round(scrollView.contentOffset.x / scrollView.bounds.size.width);
-    self.currentPage = MAX(0, MIN(page, self.pages.count - 1));
+- (void)scrollViewDidScroll:(UIScrollView *)scrollView {
+    if (scrollView.bounds.size.width <= 0 || self.pages.count == 0) return;
+    NSInteger page = (NSInteger)floor(scrollView.contentOffset.x / scrollView.bounds.size.width + 0.5);
+    self.currentPage = MAX(0, MIN(page, (NSInteger)self.pages.count - 1));
     self.pageControl.currentPage = self.currentPage;
+}
+
+- (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView {
+    [self scrollViewDidScroll:scrollView];
 }
 
 - (void)scrollViewDidEndScrollingAnimation:(UIScrollView *)scrollView {
