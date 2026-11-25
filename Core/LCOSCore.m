@@ -608,7 +608,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 
 - (void)prepareLauncherForInteractivePresentation {
     [self showLauncher];
-    [self.launcherContainer.layer removeAllAnimations];
+    [self.launcherContainer.view.layer removeAllAnimations];
     self.launcherTransitionActive = YES;
 }
 
