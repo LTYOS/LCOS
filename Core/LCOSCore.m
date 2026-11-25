@@ -83,19 +83,18 @@ static LCOSCore *_sharedInstance = nil;
 // The global tweak folder is injected into every guest app too. LCOS UI is
 // host-only until the future background/gesture layer explicitly opts in.
 static BOOL LCOSIsLiveContainerHost(void) {
-    Class sharedUtils = NSClassFromString(@"LCSharedUtils");
     SEL mainBundleSelector = NSSelectorFromString(@"lcMainBundle");
     SEL guestInfoSelector = NSSelectorFromString(@"guestAppInfo");
-    if (![sharedUtils respondsToSelector:mainBundleSelector] ||
-        ![sharedUtils respondsToSelector:guestInfoSelector]) return NO;
+    if (![NSUserDefaults respondsToSelector:mainBundleSelector] ||
+        ![NSUserDefaults respondsToSelector:guestInfoSelector]) return NO;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-    NSBundle *hostBundle = [sharedUtils performSelector:mainBundleSelector];
-    NSDictionary *guestInfo = [sharedUtils performSelector:guestInfoSelector];
+    NSBundle *hostBundle = [NSUserDefaults performSelector:mainBundleSelector];
+    NSDictionary *guestInfo = [NSUserDefaults performSelector:guestInfoSelector];
 #pragma clang diagnostic pop
     if (![hostBundle isKindOfClass:NSBundle.class]) return NO;
     return [hostBundle.bundleIdentifier isEqualToString:NSBundle.mainBundle.bundleIdentifier] &&
-           (![guestInfo isKindOfClass:NSDictionary.class] || guestInfo.count == 0);
+           ![guestInfo isKindOfClass:NSDictionary.class];
 }
 
 // Class extension for private properties
@@ -132,8 +131,9 @@ static void lcos_makeKeyAndVisible(id self, SEL _cmd) {
 @implementation LCOSCore
 
 + (void)load {
-    if (!LCOSIsLiveContainerHost()) return;
-    [[LCOSLogManager sharedManager] forceLog:@"LCOS load: +load invoked in LiveContainer host"];
+    // LCSharedUtils' host markers are not guaranteed to be initialized when
+    // a tweak's +load runs. Defer the host/guest decision to UI initialization.
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS load: +load invoked"];
     static dispatch_once_t initializationToken;
     dispatch_once(&initializationToken, ^{
         // Swizzle makeKeyAndVisible to cover the native window before it renders.
@@ -207,7 +207,26 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 
 - (void)initialize {
     // Idempotent: scene notification + async + hook may all call this.
-    if (!LCOSIsLiveContainerHost() || self.overlayWindow) return;
+    if (self.overlayWindow) return;
+    if (!LCOSIsLiveContainerHost()) {
+        SEL guestInfoSelector = NSSelectorFromString(@"guestAppInfo");
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        id guestInfo = [NSUserDefaults respondsToSelector:guestInfoSelector] ?
+            [NSUserDefaults performSelector:guestInfoSelector] : nil;
+#pragma clang diagnostic pop
+        if ([guestInfo isKindOfClass:NSDictionary.class]) {
+            [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: guest app detected, host UI disabled"];
+            return;
+        }
+        // The host has no guestAppInfo. Wait for LiveContainerMain to publish
+        // lcMainBundle rather than rejecting the host during early +load.
+        [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: waiting for LiveContainer host initialization"];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self initialize];
+        });
+        return;
+    }
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: initialize START"];
     
     // Check if window scene is ready
