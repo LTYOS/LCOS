@@ -68,11 +68,6 @@
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Launcher UI loaded, view bounds: %@", NSStringFromCGRect(self.view.bounds)]];
 }
 
-- (void)closeTapped:(UIButton *)sender {
-    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Launcher close tapped, sender=%@", sender]];
-    [[LCOSCore sharedInstance] hideLauncher];
-}
-
 - (void)reloadWallpaper {
     UIImage *img = [[LCOSWallpaper shared] currentWallpaper];
     self.wallpaperView.image = img;
