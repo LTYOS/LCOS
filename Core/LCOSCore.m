@@ -125,6 +125,11 @@ static BOOL LCOSIsLiveContainerHost(void) {
 @property (nonatomic, strong) LCOSBackgroundView *backgroundView;
 @property (nonatomic, strong) LCOSNavigationTouchZone *rightEdgeZone;
 @property (nonatomic, assign) BOOL isBackgroundVisible;
+@property (nonatomic, assign) BOOL edgeTransitionActive;
+@property (nonatomic, assign) BOOL edgeDwellReached;
+@property (nonatomic, assign) BOOL edgeLaunchingBackground;
+@property (nonatomic, strong) NSTimer *edgeDwellTimer;
+@property (nonatomic, assign) CGFloat edgeStartX;
 @end
 
 // Hook UIWindow.makeKeyAndVisible: as soon as LiveContainer's native window
@@ -511,24 +516,30 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 }
 
 - (void)updateInteractionState {
-    self.nativeDockGesture.enabled = !self.isLauncherVisible && !self.isBackgroundVisible;
+    // Disabling a long-press while it tracks the Dock cancels the active
+    // transition immediately. Keep it alive until the gesture ends.
+    self.nativeDockGesture.enabled = self.dockTransitionActive || (!self.isLauncherVisible && !self.isBackgroundVisible);
     self.launcherDismissGesture.enabled = self.isLauncherVisible && !self.dockTransitionActive && !self.isBackgroundVisible;
-    self.rightEdgeZone.hidden = self.isBackgroundVisible;
+    self.rightEdgeZone.hidden = NO;
+    self.navigationBar.hidden = NO;
     self.overlayWindow.hidden = NO;
 }
 
 - (void)setupNavigationAndBackground {
     if (self.navigationBar) return;
     UIView *root = self.overlayWindow.rootViewController.view;
-    self.navigationBar = [[LCOSNavigationBar alloc] initWithFrame:CGRectMake(root.bounds.size.width - 52, root.bounds.size.height * 0.32, 52, 220)];
+    CGFloat zoneWidth = MAX(32.0, root.bounds.size.width * 0.07);
+    CGFloat barWidth = 23.0;
+    CGFloat barHeight = 134.0;
+    self.navigationBar = [[LCOSNavigationBar alloc] initWithFrame:CGRectMake(root.bounds.size.width - 9.0 - barWidth,
+        (root.bounds.size.height - barHeight) / 2.0, barWidth, barHeight)];
     self.navigationBar.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
     self.navigationBar.alpha = 0.0;
-    self.navigationBar.onHome = ^{ [self hideBackground]; };
-    self.navigationBar.onBackground = ^{ [self showBackground]; };
-    self.navigationBar.onSettings = ^{ [self showSettings]; };
+    self.navigationBar.userInteractionEnabled = NO;
     [root addSubview:self.navigationBar];
-    self.rightEdgeZone = [[LCOSNavigationTouchZone alloc] initWithFrame:CGRectMake(root.bounds.size.width - 32, 0, 32, root.bounds.size.height)];
-    self.rightEdgeZone.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleHeight;
+    self.rightEdgeZone = [[LCOSNavigationTouchZone alloc] initWithFrame:CGRectMake(root.bounds.size.width - zoneWidth,
+        (root.bounds.size.height - barHeight) / 2.0 - 44.0, zoneWidth, barHeight + 88.0)];
+    self.rightEdgeZone.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
     self.rightEdgeZone.backgroundColor = UIColor.clearColor;
     __weak typeof(self) weakSelf = self;
     self.rightEdgeZone.onPan = ^(UIPanGestureRecognizer *gesture) { [weakSelf handleRightEdgeGesture:gesture]; };
@@ -537,41 +548,138 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 }
 
 - (void)handleRightEdgeGesture:(UIPanGestureRecognizer *)gesture {
+    CGFloat width = self.overlayWindow.bounds.size.width;
     CGPoint point = [gesture locationInView:self.overlayWindow];
+    CGFloat zoneWidth = MAX(32.0, width * 0.07);
     if (gesture.state == UIGestureRecognizerStateBegan) {
-        if (point.x < self.overlayWindow.bounds.size.width - 32.0) {
+        if (self.launcherTransitionActive || self.overlayWindow.rootViewController.presentedViewController || point.x < width - zoneWidth) {
             gesture.enabled = NO;
             gesture.enabled = YES;
             return;
         }
-        self.navigationBar.alpha = 1.0;
-    }
-    if (gesture.state == UIGestureRecognizerStateChanged) {
+        [self cancelEdgeDwell];
+        self.edgeTransitionActive = YES;
+        self.edgeDwellReached = NO;
+        self.edgeLaunchingBackground = NO;
+        self.edgeStartX = point.x;
+        [self.overlayWindow.rootViewController.view bringSubviewToFront:self.rightEdgeZone];
+        [self.overlayWindow.rootViewController.view bringSubviewToFront:self.navigationBar];
+        [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSLauncherGestureActive" object:@YES];
         [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(fadeNavigationBar) object:nil];
-    }
-    if (gesture.state == UIGestureRecognizerStateEnded) {
-        CGFloat horizontal = [gesture translationInView:self.overlayWindow].x;
-        if (horizontal < -55.0) {
-            [self showBackground];
-        } else {
-            [self performSelector:@selector(fadeNavigationBar) withObject:nil afterDelay:1.5];
+        self.navigationBar.transform = CGAffineTransformIdentity;
+        [UIView animateWithDuration:0.18 animations:^{ self.navigationBar.alpha = 1.0; }];
+        UIImpactFeedbackGenerator *feedback = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
+        [feedback impactOccurred];
+        [self scheduleEdgeDwell];
+    } else if (self.edgeTransitionActive && gesture.state == UIGestureRecognizerStateChanged) {
+        if (self.edgeLaunchingBackground) return;
+        CGFloat travel = point.x - self.edgeStartX;
+        if (ABS(travel) > 12.0) [self cancelEdgeDwell];
+        if (self.edgeDwellReached) {
+            [self.backgroundView setTransitionProgress:MIN(1.0, MAX(0, travel / 80.0))];
+        } else if (self.isBackgroundVisible) {
+            [self updateEdgeInteractivePosition:MAX(0, travel)];
+        } else if (travel > 0 && !self.launcherTransitionActive) {
+            [self updateEdgeInteractivePosition:travel];
         }
+        [self scheduleEdgeDwell];
+    } else if (self.edgeTransitionActive &&
+               (gesture.state == UIGestureRecognizerStateEnded || gesture.state == UIGestureRecognizerStateCancelled || gesture.state == UIGestureRecognizerStateFailed)) {
+        [self cancelEdgeDwell];
+        self.edgeDwellReached = NO;
+        [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSLauncherGestureActive" object:@NO];
+        BOOL returnsHome = !self.edgeLaunchingBackground && gesture.state == UIGestureRecognizerStateEnded &&
+            point.x - self.edgeStartX > 55.0 && [gesture velocityInView:self.overlayWindow].x > 350.0;
+        [self finishEdgeTransitionReturningHome:returnsHome cancelled:gesture.state != UIGestureRecognizerStateEnded];
+        self.edgeLaunchingBackground = NO;
     }
+}
+
+- (void)updateEdgeInteractivePosition:(CGFloat)travel {
+    if (self.isBackgroundVisible) {
+        [self.backgroundView setTransitionProgress:1.0 - MIN(1.0, MAX(0, travel / 180.0))];
+    } else if (self.isLauncherVisible) {
+        CGFloat width = self.launcherContainer.view.bounds.size.width;
+        self.launcherContainer.view.transform = CGAffineTransformMakeTranslation(MAX(0, travel), 0);
+        self.navigationBar.transform = CGAffineTransformMakeTranslation(MAX(0, travel) - width, 0);
+    } else {
+        self.navigationBar.transform = CGAffineTransformMakeTranslation(-MIN(40, MAX(0, travel)), 0);
+    }
+}
+
+- (void)finishEdgeTransitionReturningHome:(BOOL)returningHome cancelled:(BOOL)cancelled {
+    if (self.isBackgroundVisible) {
+        [UIView animateWithDuration:0.32 delay:0 usingSpringWithDamping:0.84 initialSpringVelocity:0 options:0 animations:^{
+            [self.backgroundView setTransitionProgress:returningHome ? 0.0 : 1.0];
+            self.navigationBar.transform = CGAffineTransformIdentity;
+            self.navigationBar.alpha = returningHome ? 0.65 : 0.0;
+        } completion:^(BOOL finished) {
+            self.edgeTransitionActive = NO;
+            if (returningHome) [self hideBackground];
+            [self performSelector:@selector(fadeNavigationBar) withObject:nil afterDelay:1.8];
+        }];
+        return;
+    }
+    if (self.isLauncherVisible && returningHome) {
+        self.launcherTransitionActive = YES;
+        [UIView animateWithDuration:0.28 delay:0 usingSpringWithDamping:0.86 initialSpringVelocity:0 options:0 animations:^{
+            self.launcherContainer.view.transform = CGAffineTransformMakeTranslation(self.launcherContainer.view.bounds.size.width, 0);
+            self.navigationBar.transform = CGAffineTransformIdentity;
+            self.navigationBar.alpha = 0;
+        } completion:^(BOOL finished) {
+            [self finishHidingLauncher];
+            self.edgeTransitionActive = NO;
+        }];
+        return;
+    }
+    [UIView animateWithDuration:0.25 delay:0 usingSpringWithDamping:0.86 initialSpringVelocity:0 options:0 animations:^{
+        self.launcherContainer.view.transform = CGAffineTransformIdentity;
+        self.navigationBar.transform = CGAffineTransformIdentity;
+        self.navigationBar.alpha = 0;
+    } completion:^(BOOL finished) {
+        self.edgeTransitionActive = NO;
+        [self fadeNavigationBar];
+    }];
+}
+
+- (void)scheduleEdgeDwell {
+    if (self.edgeLaunchingBackground || self.edgeDwellReached || self.isBackgroundVisible) return;
+    [self cancelEdgeDwell];
+    self.edgeDwellTimer = [NSTimer scheduledTimerWithTimeInterval:0.9 repeats:NO block:^(NSTimer *timer) {
+        if (!self.edgeTransitionActive || self.isBackgroundVisible) return;
+        self.edgeDwellReached = YES;
+        UIImpactFeedbackGenerator *feedback = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleRigid];
+        [feedback impactOccurred];
+        [self showBackground];
+        self.edgeLaunchingBackground = YES;
+    }];
+}
+
+- (void)cancelEdgeDwell {
+    [self.edgeDwellTimer invalidate];
+    self.edgeDwellTimer = nil;
 }
 
 - (void)fadeNavigationBar {
-    [UIView animateWithDuration:0.4 animations:^{ self.navigationBar.alpha = 0.35; }];
+    if (self.edgeTransitionActive) return;
+    [UIView animateWithDuration:0.3 animations:^{ self.navigationBar.alpha = 0.0; }];
 }
 
-- (void)showBackground {
-    if (self.isBackgroundVisible) return;
-    if (!self.isLauncherVisible) [self showLauncher];
+- (void)prepareBackgroundForCurrentInterface {
     if (!self.backgroundView) {
         self.backgroundView = [[LCOSBackgroundView alloc] initWithFrame:self.overlayWindow.rootViewController.view.bounds];
         self.backgroundView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-        self.backgroundView.onClose = ^{ [self hideBackground]; };
-        [self.backgroundView setApps:[LCOSAppModel allInstalledApps]];
+        __weak typeof(self) weakSelf = self;
+        self.backgroundView.onClose = ^{ [weakSelf hideBackground]; };
+        self.backgroundView.onEmptySpaceTapped = ^{ [weakSelf hideBackground]; };
     }
+    // The visible host layer is authoritative: native UI remains native and
+    // the LCOS desktop remains LCOS when the switcher is dismissed.
+    self.navigationBar.hidden = YES;
+    self.rightEdgeZone.hidden = YES;
+    [self.backgroundView prepareWithCurrentInterface:self.overlayWindow];
+    self.navigationBar.hidden = NO;
+    self.rightEdgeZone.hidden = NO;
     if (!self.backgroundView.superview) [self.overlayWindow.rootViewController.view addSubview:self.backgroundView];
     if ([self.overlayWindow isKindOfClass:LCOSPassThroughWindow.class]) {
         ((LCOSPassThroughWindow *)self.overlayWindow).backgroundView = self.backgroundView;
@@ -579,22 +687,27 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     [self.overlayWindow.rootViewController.view bringSubviewToFront:self.backgroundView];
     [self.overlayWindow.rootViewController.view bringSubviewToFront:self.navigationBar];
     self.backgroundView.hidden = NO;
-    self.backgroundView.alpha = 0;
-    self.backgroundView.transform = CGAffineTransformMakeTranslation(44, 0);
+}
+
+- (void)animateBackgroundProgress:(CGFloat)progress completion:(void (^)(void))completion {
+    [UIView animateWithDuration:0.38 delay:0 usingSpringWithDamping:0.84 initialSpringVelocity:0 options:0 animations:^{
+        [self.backgroundView setTransitionProgress:progress];
+    } completion:^(BOOL finished) { if (completion) completion(); }];
+}
+
+- (void)showBackground {
+    if (self.isBackgroundVisible) return;
+    [self prepareBackgroundForCurrentInterface];
+    [self.backgroundView setApps:[LCOSAppModel allInstalledApps]];
+    [self.backgroundView setTransitionProgress:0.35];
     self.isBackgroundVisible = YES;
     [self updateInteractionState];
-    [UIView animateWithDuration:0.25 animations:^{
-        self.backgroundView.alpha = 1;
-        self.backgroundView.transform = CGAffineTransformIdentity;
-    }];
+    [self animateBackgroundProgress:1.0 completion:nil];
 }
 
 - (void)hideBackground {
     if (!self.isBackgroundVisible) return;
-    [UIView animateWithDuration:0.22 animations:^{
-        self.backgroundView.alpha = 0;
-        self.backgroundView.transform = CGAffineTransformMakeTranslation(44, 0);
-    } completion:^(BOOL finished) {
+    [self animateBackgroundProgress:0.0 completion:^{
         self.backgroundView.hidden = YES;
         [self.backgroundView removeFromSuperview];
         if ([self.overlayWindow isKindOfClass:LCOSPassThroughWindow.class]) {
@@ -602,6 +715,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         }
         self.isBackgroundVisible = NO;
         [self updateInteractionState];
+        [self performSelector:@selector(fadeNavigationBar) withObject:nil afterDelay:1.8];
     }];
 }
 

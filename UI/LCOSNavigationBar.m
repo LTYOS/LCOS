@@ -1,39 +1,59 @@
 #import "LCOSNavigationBar.h"
 
+@interface LCOSNavigationBar ()
+@property (nonatomic, strong) UIVisualEffectView *glassView;
+@end
+
 @implementation LCOSNavigationBar
+
 - (instancetype)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:frame];
     if (self) {
-        self.backgroundColor = [UIColor colorWithWhite:0.1 alpha:0.35];
-        self.layer.cornerRadius = 3;
-        self.layer.cornerCurve = kCACornerCurveContinuous;
-        NSArray<NSString *> *symbols = @[@"house.fill", @"square.stack.3d.up.fill", @"gearshape.fill"];
-        NSArray<NSString *> *names = @[@"桌面", @"后台", @"设置"];
-        NSArray<NSString *> *selectors = @[@"homeTapped", @"backgroundTapped", @"settingsTapped"];
-        UIStackView *stack = [[UIStackView alloc] init];
-        stack.axis = UILayoutConstraintAxisVertical;
-        stack.spacing = 24;
-        stack.translatesAutoresizingMaskIntoConstraints = NO;
-        [self addSubview:stack];
-        for (NSInteger i = 0; i < symbols.count; i++) {
-            UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
-            button.tintColor = UIColor.whiteColor;
-            UIImage *image = [UIImage systemImageNamed:symbols[i] withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:20 weight:UIImageSymbolWeightMedium]];
-            [button setImage:image forState:UIControlStateNormal];
-            button.accessibilityLabel = names[i];
-            [button addTarget:self action:NSSelectorFromString(selectors[i]) forControlEvents:UIControlEventTouchUpInside];
-            [button.widthAnchor constraintEqualToConstant:42].active = YES;
-            [button.heightAnchor constraintEqualToConstant:44].active = YES;
-            [stack addArrangedSubview:button];
+        self.backgroundColor = UIColor.clearColor;
+        self.clipsToBounds = NO;
+        self.accessibilityLabel = @"对谨条";
+        self.accessibilityHint = @"测迅边端滞动以当当打开同可或返回桌面";
+        if (@available(iOS 26.0, *)) {
+            self.glassView = [[UIVisualEffectView alloc] initWithEffect:[UIGlassEffect effect]];
+        } else {
+            self.glassView = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterial]];
         }
-        [NSLayoutConstraint activateConstraints:@[
-            [stack.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
-            [stack.centerYAnchor constraintEqualToAnchor:self.centerYAnchor]
-        ]];
+        self.glassView.userInteractionEnabled = NO;
+        self.glassView.layer.cornerRadius = 3.0;
+        self.glassView.layer.cornerCurve = kCACornerCurveContinuous;
+        self.glassView.layer.borderWidth = 0.0;
+        self.glassView.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.42].CGColor;
+        self.glassView.clipsToBounds = YES;
+        if (@available(iOS 26.0, *)) {
+            self.glassView.backgroundColor = [UIColor colorWithWhite:1 alpha:0.68];
+        } else {
+            self.glassView.backgroundColor = [UIColor colorWithWhite:1 alpha:0.55];
+        }
+        [self addSubview:self.glassView];
+        UIView *highlight = [[UIView alloc] init];
+        highlight.userInteractionEnabled = NO;
+        highlight.backgroundColor = [UIColor colorWithWhite:1 alpha:0.42];
+        highlight.layer.cornerRadius = 0.5;
+        highlight.tag = 21;
+        [self addSubview:highlight];
     }
     return self;
 }
-- (void)homeTapped { if (self.onHome) self.onHome(); }
-- (void)backgroundTapped { if (self.onBackground) self.onBackground(); }
-- (void)settingsTapped { if (self.onSettings) self.onSettings(); }
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    CGFloat width = 5.0;
+    CGFloat height = MIN(134.0, self.bounds.size.height);
+    CGRect pill = CGRectMake((self.bounds.size.width - width) / 2.0,
+                             (self.bounds.size.height - height) / 2.0, width, height);
+    self.glassView.frame = pill;
+    UIView *highlight = [self viewWithTag:21];
+    highlight.frame = CGRectMake(CGRectGetMidX(pill) - 0.5, CGRectGetMinY(pill) + 5,
+                                 1.0, MAX(0, height - 10));
+}
+
+- (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
+    return CGRectContainsPoint(CGRectInset(self.bounds, -8, -16), point);
+}
+
 @end

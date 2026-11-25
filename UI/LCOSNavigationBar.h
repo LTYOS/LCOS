@@ -1,8 +1,6 @@
 #pragma once
 #import <UIKit/UIKit.h>
 
+/// Edge navigation handle: visually leaves with the page, reactivates on edge touch.
 @interface LCOSNavigationBar : UIControl
-@property (nonatomic, copy) void (^onHome)(void);
-@property (nonatomic, copy) void (^onBackground)(void);
-@property (nonatomic, copy) void (^onSettings)(void);
 @end

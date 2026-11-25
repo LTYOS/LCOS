@@ -103,7 +103,7 @@
             LCOSAppModel *app = apps[index];
             LCOSAppIconView *iconView = [[LCOSAppIconView alloc] initWithAppModel:app];
             [pageView addSubview:iconView];
-            iconView.translatesAutoresizingMaskIntoConstraints = YES;
+            iconView.translatesAutoresizingMaskIntoConstraints = Yes;
             [pageItems addObject:app];
         }
         [self.currentPageItems addObject:pageItems];
@@ -214,14 +214,15 @@
 
 - (void)setLauncherGestureActive:(BOOL)active {
     self.scrollView.scrollEnabled = !active;
-    self.scrollView.panGestureRecognizer.enabled = !active;
-    for (UIGestureRecognizer *gesture in self.scrollView.gestureRecognizers) {
-        if ([gesture isKindOfClass:UITapGestureRecognizer.class]) gesture.enabled = !active;
-    }
+    // Do not disable pan: changing enabled during recognition cancels an
+    // active finger sequence. scrollEnabled alone prevents icon paging.
+    // Keep pan enabled: disabling it cancels an active finger sequence.
+    // scrollEnabled suppresses paging; the tap callback checks this state
+    // before launching an icon instead of cancelling an in-flight recognizer.
 }
 
 - (void)gridTapGestureRecognized:(UITapGestureRecognizer *)gesture {
-    if (gesture.state != UIGestureRecognizerStateEnded) return;
+    if (gesture.state != UIGestureRecognizerStateEnded || !self.scrollView.isScrollEnabled) return;
     CGPoint location = [gesture locationInView:self.scrollView];
     // scrollView's location is in its content coordinate system (includes
     // contentOffset). Walk the icon frames directly; convertPoint is not

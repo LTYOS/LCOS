@@ -7,6 +7,7 @@
 #import "LCOSLogManager.h"
 #import "LCOSWallpaper.h"
 #import "LCOSLayoutSettingsView.h"
+#import "LCOSLayout.h"
 #import "LCOSCore.h"
 
 static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
@@ -15,6 +16,8 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
 @property (nonatomic, strong) UILabel *titleLabel;
 @property (nonatomic, strong) UISwitch *autoRestoreSwitch;
 @property (nonatomic, strong) UIImageView *wallpaperPreview;
+@property (nonatomic, strong) UISlider *sheetRadiusSlider;
+@property (nonatomic, strong) UILabel *sheetRadiusValueLabel;
 @end
 
 @implementation LCOSSettingsView
@@ -53,7 +56,7 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
     [self.view addSubview:self.autoRestoreSwitch];
     
     UILabel *autoRestoreHint = [[UILabel alloc] init];
-    autoRestoreHint.text = @"开启后，若上次在桌面退出，下次打开自动进入桌面";
+    autoRestoreHint.text = @"开启同同，若上次在桌面退出，下次打开自动进入桌面";
     autoRestoreHint.font = [UIFont systemFontOfSize:13];
     autoRestoreHint.textColor = [UIColor secondaryLabelColor];
     autoRestoreHint.numberOfLines = 0;
@@ -82,7 +85,7 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
     
     // Wallpaper section
     UILabel *wallpaperLabel = [[UILabel alloc] init];
-    wallpaperLabel.text = @"桌面壁纸";
+    wallpaperLabel.text = @"桌面声纸";
     wallpaperLabel.font = [UIFont systemFontOfSize:17];
     wallpaperLabel.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:wallpaperLabel];
@@ -104,7 +107,7 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
     [self.view addSubview:chooseBtn];
     
     UIButton *clearBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    [clearBtn setTitle:@"恢复默认" forState:UIControlStateNormal];
+    [clearBtn setTitle:@"恢复黑精" forState:UIControlStateNormal];
     [clearBtn setTitleColor:[UIColor systemRedColor] forState:UIControlStateNormal];
     clearBtn.titleLabel.font = [UIFont systemFontOfSize:16];
     [clearBtn addTarget:self action:@selector(clearWallpaper) forControlEvents:UIControlEventTouchUpInside];
@@ -135,7 +138,7 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
 
     UIButton *layoutButton = [UIButton buttonWithType:UIButtonTypeSystem];
     layoutButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
-    [layoutButton setTitle:@"桌面布局  ›" forState:UIControlStateNormal];
+    [layoutButton setTitle:@"桌面布局 ›" forState:UIControlStateNormal];
     layoutButton.titleLabel.font = [UIFont systemFontOfSize:17];
     [layoutButton addTarget:self action:@selector(openLayoutSettings) forControlEvents:UIControlEventTouchUpInside];
     layoutButton.translatesAutoresizingMaskIntoConstraints = NO;
@@ -149,7 +152,46 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
         [layoutButton.heightAnchor constraintEqualToConstant:44],
     ]];
 
+    // Keep this frequently used developer control on the main settings page.
+    UILabel *radiusLabel = [[UILabel alloc] init];
+    radiusLabel.text = @"桌面滞动顶部形度";
+    radiusLabel.font = [UIFont systemFontOfSize:15];
+    radiusLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:radiusLabel];
+    self.sheetRadiusValueLabel = [[UILabel alloc] init];
+    self.sheetRadiusValueLabel.textAlignment = NSTextAlignmentRight;
+    self.sheetRadiusValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:14 weight:UIFontWeightRegular];
+    self.sheetRadiusValueLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:self.sheetRadiusValueLabel];
+    self.sheetRadiusSlider = [[UISlider alloc] init];
+    self.sheetRadiusSlider.minimumValue = 0;
+    self.sheetRadiusSlider.maximumValue = 60;
+    self.sheetRadiusSlider.value = [LCOSLayout value:@"sheetRadius"];
+    self.sheetRadiusSlider.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.sheetRadiusSlider addTarget:self action:@selector(sheetRadiusChanged:) forControlEvents:UIControlEventValueChanged];
+    [self.view addSubview:self.sheetRadiusSlider];
+    [self updateSheetRadiusLabel];
+    [NSLayoutConstraint activateConstraints:@[
+        [radiusLabel.leadingAnchor constraintEqualToAnchor:layoutButton.leadingAnchor],
+        [radiusLabel.topAnchor constraintEqualToAnchor:layoutButton.bottomAnchor constant:14],
+        [self.sheetRadiusValueLabel.trailingAnchor constraintEqualToAnchor:layoutButton.trailingAnchor],
+        [self.sheetRadiusValueLabel.centerYAnchor constraintEqualToAnchor:radiusLabel.centerYAnchor],
+        [self.sheetRadiusSlider.leadingAnchor constraintEqualToAnchor:radiusLabel.leadingAnchor],
+        [self.sheetRadiusSlider.trailingAnchor constraintEqualToAnchor:layoutButton.trailingAnchor],
+        [self.sheetRadiusSlider.topAnchor constraintEqualToAnchor:radiusLabel.bottomAnchor constant:4],
+        [self.sheetRadiusSlider.heightAnchor constraintEqualToConstant:36],
+    ]];
+
     [[LCOSLogManager sharedManager] forceLog:@"LCOS Settings viewDidLoad"];
+}
+
+- (void)updateSheetRadiusLabel {
+    self.sheetRadiusValueLabel.text = [NSString stringWithFormat:@"%.1f pt", [LCOSLayout value:@"sheetRadius"]];
+}
+
+- (void)sheetRadiusChanged:(UISlider *)slider {
+    [LCOSLayout setValue:slider.value forKey:@"sheetRadius"];
+    [self updateSheetRadiusLabel];
 }
 
 - (void)openLayoutSettings {
@@ -198,23 +240,23 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
 
 - (void)autoRestoreChanged:(UISwitch *)sender {
     [[NSUserDefaults standardUserDefaults] setBool:sender.isOn forKey:kLCOSAutoRestoreKey];
-    [[NSUserDefaults standardUserDefaults] synchronize];
+    [NSUserDefaults standardUserDefaults] synchronize];
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Settings: auto-restore desktop = %@", sender.isOn ? @"ON" : @"OFF"]];
 }
 
 - (void)closeTapped:(UIButton *)sender {
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS Settings close tapped")];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Settings close tapped"];
     [self dismissViewControllerAnimated:YES completion:nil];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS Settings viewDidAppear")];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Settings viewDidAppear"];
 }
 
 - (void)viewWillDisappear:(BOOL)animated {
     [super viewWillDisappear:animated];
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS Settings viewWillDisappear")];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Settings viewWillDisappear"];
 }
 
 @end
