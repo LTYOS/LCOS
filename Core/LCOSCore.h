@@ -27,6 +27,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)showFloatingButton;
 - (void)hideFloatingButton;
 
+/** 原生 Dock 长按上滑、桌面三指下滑。 */
+- (void)setUsesGestureLauncher:(BOOL)enabled;
+- (BOOL)usesGestureLauncher;
+
 @end
 
 NS_ASSUME_NONNULL_END

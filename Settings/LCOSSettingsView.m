@@ -7,8 +7,10 @@
 #import "LCOSLogManager.h"
 #import "LCOSWallpaper.h"
 #import "LCOSLayoutSettingsView.h"
+#import "LCOSCore.h"
 
 static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
+static NSString *const kLCOSUsesGestureLauncherKey = @"LCOSUsesGestureLauncher";
 
 @interface LCOSSettingsView () <UIImagePickerControllerDelegate, UINavigationControllerDelegate>
 @property (nonatomic, strong) UILabel *titleLabel;
@@ -79,6 +81,22 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
         [autoRestoreHint.topAnchor constraintEqualToAnchor:autoRestoreLabel.bottomAnchor constant:8],
     ]];
     
+    // Second item: choose the only desktop entry method.
+    UIButton *entryModeButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    entryModeButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+    entryModeButton.titleLabel.font = [UIFont systemFontOfSize:17];
+    entryModeButton.tag = 1001;
+    [entryModeButton addTarget:self action:@selector(openEntryModeMenu) forControlEvents:UIControlEventTouchUpInside];
+    entryModeButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:entryModeButton];
+    [NSLayoutConstraint activateConstraints:@[
+        [entryModeButton.leadingAnchor constraintEqualToAnchor:autoRestoreLabel.leadingAnchor],
+        [entryModeButton.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-24],
+        [entryModeButton.topAnchor constraintEqualToAnchor:autoRestoreHint.bottomAnchor constant:20],
+        [entryModeButton.heightAnchor constraintEqualToConstant:44],
+    ]];
+    [self updateEntryModeButton];
+    
     // Wallpaper section
     UILabel *wallpaperLabel = [[UILabel alloc] init];
     wallpaperLabel.text = @"桌面壁纸";
@@ -112,7 +130,7 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
     
     [NSLayoutConstraint activateConstraints:@[
         [wallpaperLabel.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:24],
-        [wallpaperLabel.topAnchor constraintEqualToAnchor:autoRestoreHint.bottomAnchor constant:32],
+        [wallpaperLabel.topAnchor constraintEqualToAnchor:entryModeButton.bottomAnchor constant:20],
         
         [self.wallpaperPreview.leadingAnchor constraintEqualToAnchor:wallpaperLabel.leadingAnchor],
         [self.wallpaperPreview.topAnchor constraintEqualToAnchor:wallpaperLabel.bottomAnchor constant:12],
@@ -149,6 +167,38 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
     ]];
 
     [[LCOSLogManager sharedManager] forceLog:@"LCOS Settings viewDidLoad"];
+}
+
+- (void)updateEntryModeButton {
+    BOOL gestures = [NSUserDefaults.standardUserDefaults boolForKey:kLCOSUsesGestureLauncherKey];
+    UIButton *button = [self.view viewWithTag:1001];
+    [button setTitle:[NSString stringWithFormat:@"桌面打开方式：%@  ›", gestures ? @"手势" : @"悬浮按钮"]
+            forState:UIControlStateNormal];
+}
+
+- (void)openEntryModeMenu {
+    UIAlertController *menu = [UIAlertController alertControllerWithTitle:@"桌面打开方式"
+                                                                  message:@"两种方式互斥，选择后立即生效"
+                                                           preferredStyle:UIAlertControllerStyleActionSheet];
+    BOOL gestures = [NSUserDefaults.standardUserDefaults boolForKey:kLCOSUsesGestureLauncherKey];
+    [menu addAction:[UIAlertAction actionWithTitle:gestures ? @"✓ 手势" : @"手势"
+                                            style:UIAlertActionStyleDefault
+                                          handler:^(UIAlertAction *action) {
+        [NSUserDefaults.standardUserDefaults setBool:YES forKey:kLCOSUsesGestureLauncherKey];
+        [[LCOSCore sharedInstance] setUsesGestureLauncher:YES];
+        [self updateEntryModeButton];
+    }]];
+    [menu addAction:[UIAlertAction actionWithTitle:gestures ? @"悬浮按钮" : @"✓ 悬浮按钮"
+                                            style:UIAlertActionStyleDefault
+                                          handler:^(UIAlertAction *action) {
+        [NSUserDefaults.standardUserDefaults setBool:NO forKey:kLCOSUsesGestureLauncherKey];
+        [[LCOSCore sharedInstance] setUsesGestureLauncher:NO];
+        [self updateEntryModeButton];
+    }]];
+    [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    menu.popoverPresentationController.sourceView = [self.view viewWithTag:1001];
+    menu.popoverPresentationController.sourceRect = [self.view viewWithTag:1001].bounds;
+    [self presentViewController:menu animated:YES completion:nil];
 }
 
 - (void)openLayoutSettings {

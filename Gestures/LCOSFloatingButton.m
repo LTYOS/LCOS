@@ -204,14 +204,10 @@ static NSString *const kLCOSButtonCenterY = @"LCOSFloatingButton.centerY";
 
 // UIGestureRecognizerDelegate - ensure button receives touches
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
-    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS FloatingButton: shouldReceiveTouch gesture=%@ touchView=%@", gestureRecognizer, touch.view]];
-    // Allow all touches on the button itself
-    if (touch.view == self || [touch.view isDescendantOfView:self]) {
-        [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: shouldReceiveTouch -> YES"];
-        return YES;
-    }
-    [[LCOSLogManager sharedManager] forceLog:@"LCOS FloatingButton: shouldReceiveTouch -> NO"];
-    return NO;
+    // The recognizer is attached to this button; its own touches must always
+    // be accepted. Do not reject the drag gesture before it can begin.
+    return gestureRecognizer == self.dragGesture &&
+           (touch.view == self || [touch.view isDescendantOfView:self]);
 }
 
 // Touch event overrides - trace responder chain

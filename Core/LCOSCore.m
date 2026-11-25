@@ -101,6 +101,12 @@ static BOOL LCOSIsLiveContainerHost(void) {
 @interface LCOSCore ()
 @property (nonatomic, strong) UILongPressGestureRecognizer *overlayLongPressGesture;
 @property (nonatomic, strong) UILongPressGestureRecognizer *launcherLongPressGesture;
+@property (nonatomic, strong) UILongPressGestureRecognizer *nativeDockGesture;
+@property (nonatomic, strong) UIPanGestureRecognizer *launcherDismissGesture;
+@property (nonatomic, weak) UITabBar *nativeDock;
+@property (nonatomic, assign) BOOL dockTransitionActive;
+@property (nonatomic, assign) BOOL launcherTransitionActive;
+@property (nonatomic, assign) CGPoint dockGestureStart;
 @end
 
 // Hook UIWindow.makeKeyAndVisible: as soon as LiveContainer's native window
@@ -183,6 +189,7 @@ static void lcos_makeKeyAndVisible(id self, SEL _cmd) {
 // Persistence key for launcher state
 static NSString *const kLCOSLauncherVisibleKey = @"LCOSLauncherVisible";
 static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
+static NSString *const kLCOSUsesGestureLauncherKey = @"LCOSUsesGestureLauncher";
 
 // Auto-restore defaults to YES unless explicitly disabled.
 static BOOL LCOSAutoRestoreEnabled(void) {
@@ -284,6 +291,8 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     
     // Register gesture recognizers on overlay window (three-finger long press for settings)
     [self registerGesturesOnOverlayWindow];
+    [self installNativeDockGestureIfNeeded];
+    [self updateLauncherEntryMode];
     
     // Restore launcher state: if auto-restore enabled and was visible, show immediately
     BOOL wasVisible = LCOSAutoRestoreEnabled() && [self loadLauncherState];
@@ -347,12 +356,16 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     // Restore desktop without animation so the native UI never flashes.
     [UIView setAnimationsEnabled:NO];
     [self showLauncher];
-    if (self.launcherContainer) self.launcherContainer.view.alpha = 1.0;
+    if (self.launcherContainer) {
+        self.launcherContainer.view.alpha = 1.0;
+        self.launcherContainer.view.transform = CGAffineTransformIdentity;
+    }
     [UIView setAnimationsEnabled:YES];
 }
 
 - (void)showLauncher {
     if (self.isLauncherVisible) return;
+    if (!self.isLauncherVisible) self.launcherTransitionActive = YES;
     
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: showLauncher"];
     
@@ -417,30 +430,56 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     self.overlayLongPressGesture.enabled = NO;
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: overlayLongPressGesture disabled (launcher visible)"];
     
-    // Animate in
-    self.launcherContainer.view.alpha = 0.0;
-    [UIView animateWithDuration:0.3 animations:^{
-        self.launcherContainer.view.alpha = 1.0;
-    }];
+    // Match the settings sheet: the desktop slides up from the bottom.
+    self.launcherContainer.view.alpha = 1.0;
+    if (self.dockTransitionActive) {
+        self.launcherContainer.view.transform = CGAffineTransformIdentity;
+    } else {
+        self.launcherContainer.view.transform = CGAffineTransformMakeTranslation(0, self.launcherContainer.view.bounds.size.height);
+        [UIView animateWithDuration:0.3 delay:0 options:UIViewAnimationOptionCurveEaseOut animations:^{
+            self.launcherContainer.view.transform = CGAffineTransformIdentity;
+        } completion:^(BOOL finished) {
+            self.launcherTransitionActive = NO;
+        }];
+    }
     
     self.isLauncherVisible = YES;
     
+    if (!self.launcherDismissGesture) {
+        self.launcherDismissGesture = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handleLauncherDismissGesture:)];
+        self.launcherDismissGesture.minimumNumberOfTouches = 3;
+        self.launcherDismissGesture.maximumNumberOfTouches = 3;
+        self.launcherDismissGesture.delegate = self;
+        [self.launcherContainer.view addGestureRecognizer:self.launcherDismissGesture];
+    }
+
     // Keep the same button above the launcher: tap now closes the desktop.
-    [self.floatingButton showOnWindow:self.overlayWindow];
-    [self.overlayWindow.rootViewController.view bringSubviewToFront:self.floatingButton];
+    self.floatingButton.hidden = [self usesGestureLauncher];
+    if (![self usesGestureLauncher]) {
+        [self.floatingButton showOnWindow:self.overlayWindow];
+        [self.overlayWindow.rootViewController.view bringSubviewToFront:self.floatingButton];
+    }
     
     // Save state
     [self saveLauncherState];
+    [self updateLauncherEntryMode];
 }
 
 - (void)hideLauncher {
-    if (!self.isLauncherVisible) return;
+    if (!self.isLauncherVisible || self.launcherTransitionActive) return;
+    self.launcherTransitionActive = YES;
     
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: hideLauncher"];
     
-    [UIView animateWithDuration:0.3 animations:^{
-        self.launcherContainer.view.alpha = 0.0;
+    [UIView animateWithDuration:0.3 delay:0 options:UIViewAnimationOptionCurveEaseIn animations:^{
+        self.launcherContainer.view.transform = CGAffineTransformMakeTranslation(0, self.launcherContainer.view.bounds.size.height);
     } completion:^(BOOL finished) {
+        [self finishHidingLauncher];
+    }];
+}
+
+- (void)finishHidingLauncher {
+        self.launcherContainer.view.transform = CGAffineTransformIdentity;
         [self.launcherView willMoveToParentViewController:nil];
         [self.launcherView.view removeFromSuperview];
         [self.launcherView removeFromParentViewController];
@@ -460,16 +499,154 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         self.overlayLongPressGesture.enabled = YES;
         [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: overlayLongPressGesture enabled (launcher hidden)"];
         
-        // Show floating button again
-        self.floatingButton.hidden = NO;
-        [self.floatingButton showOnWindow:self.overlayWindow];
+        // Show floating button again when it is the selected entry mode.
+        self.floatingButton.hidden = [self usesGestureLauncher];
+        if (![self usesGestureLauncher]) [self.floatingButton showOnWindow:self.overlayWindow];
         
         // Save state
         [self saveLauncherState];
+        self.launcherTransitionActive = NO;
+        [self updateLauncherEntryMode];
+}
+
+- (BOOL)usesGestureLauncher {
+    return [NSUserDefaults.standardUserDefaults boolForKey:kLCOSUsesGestureLauncherKey];
+}
+
+- (void)setUsesGestureLauncher:(BOOL)enabled {
+    [NSUserDefaults.standardUserDefaults setBool:enabled forKey:kLCOSUsesGestureLauncherKey];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self updateLauncherEntryMode];
+    });
+}
+
+- (void)updateLauncherEntryMode {
+    BOOL gestures = [self usesGestureLauncher];
+    self.floatingButton.hidden = gestures;
+    self.nativeDockGesture.enabled = gestures && (!self.isLauncherVisible || self.dockTransitionActive);
+    self.launcherDismissGesture.enabled = gestures && self.isLauncherVisible && !self.dockTransitionActive;
+    self.overlayWindow.hidden = NO;
+    if (gestures) {
+        [self installNativeDockGestureIfNeeded];
+    } else {
+        [self.floatingButton showOnWindow:self.overlayWindow];
+        [self.overlayWindow.rootViewController.view bringSubviewToFront:self.floatingButton];
+    }
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
+        @"LCOSCore: launcher entry mode = %@", gestures ? @"gestures" : @"floating button"]];
+}
+
+- (void)installNativeDockGestureIfNeeded {
+    if (self.nativeDockGesture) return;
+    UITabBar *dock = nil;
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class]) continue;
+        for (UIWindow *window in ((UIWindowScene *)scene).windows) {
+            if (window == self.overlayWindow || window.hidden) continue;
+            dock = [self findTabBarInView:window];
+            if (dock) break;
+        }
+        if (dock) break;
+    }
+    if (!dock) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            if (!self.nativeDockGesture) [self installNativeDockGestureIfNeeded];
+        });
+        return;
+    }
+    self.nativeDock = dock;
+    UILongPressGestureRecognizer *gesture = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleNativeDockGesture:)];
+    gesture.minimumPressDuration = 0.35;
+    gesture.numberOfTouchesRequired = 1;
+    gesture.allowableMovement = CGFLOAT_MAX;
+    gesture.cancelsTouchesInView = NO;
+    gesture.delegate = self;
+    [dock addGestureRecognizer:gesture];
+    self.nativeDockGesture = gesture;
+    gesture.enabled = [self usesGestureLauncher] && !self.isLauncherVisible;
+    [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: native Dock long-press upward gesture installed"];
+}
+
+- (UITabBar *)findTabBarInView:(UIView *)view {
+    if ([view isKindOfClass:UITabBar.class]) return (UITabBar *)view;
+    for (UIView *child in view.subviews) {
+        UITabBar *result = [self findTabBarInView:child];
+        if (result) return result;
+    }
+    return nil;
+}
+
+- (void)handleNativeDockGesture:(UILongPressGestureRecognizer *)gesture {
+    if (![self usesGestureLauncher] || (self.isLauncherVisible && !self.dockTransitionActive)) return;
+    CGPoint location = [gesture locationInView:self.overlayWindow];
+    if (gesture.state == UIGestureRecognizerStateBegan) {
+        self.dockTransitionActive = YES;
+        self.dockGestureStart = location;
+        [self prepareLauncherForInteractivePresentation];
+        self.launcherContainer.view.transform = CGAffineTransformMakeTranslation(0, self.launcherContainer.view.bounds.size.height);
+    } else if (self.dockTransitionActive && gesture.state == UIGestureRecognizerStateChanged) {
+        CGFloat upward = MAX(0.0, self.dockGestureStart.y - location.y);
+        CGFloat height = self.launcherContainer.view.bounds.size.height;
+        self.launcherContainer.view.transform = CGAffineTransformMakeTranslation(0, MAX(0.0, height - upward));
+    } else if (self.dockTransitionActive && (gesture.state == UIGestureRecognizerStateEnded || gesture.state == UIGestureRecognizerStateCancelled)) {
+        CGFloat upward = MAX(0.0, self.dockGestureStart.y - location.y);
+        BOOL shouldOpen = gesture.state == UIGestureRecognizerStateEnded && upward > self.launcherContainer.view.bounds.size.height * 0.18;
+        self.dockTransitionActive = NO;
+        if (shouldOpen) {
+            [self finishInteractivePresentation];
+        } else {
+            self.isLauncherVisible = NO;
+            self.launcherTransitionActive = YES;
+            [UIView animateWithDuration:0.2 animations:^{
+                self.launcherContainer.view.transform = CGAffineTransformMakeTranslation(0, self.launcherContainer.view.bounds.size.height);
+            } completion:^(BOOL finished) {
+                [self finishHidingLauncher];
+            }];
+        }
+    }
+}
+
+- (void)prepareLauncherForInteractivePresentation {
+    [self showLauncher];
+    [self.launcherContainer.layer removeAllAnimations];
+    self.launcherTransitionActive = YES;
+}
+
+- (void)finishInteractivePresentation {
+    self.launcherTransitionActive = YES;
+    [UIView animateWithDuration:0.22 delay:0 options:UIViewAnimationOptionCurveEaseOut animations:^{
+        self.launcherContainer.view.transform = CGAffineTransformIdentity;
+    } completion:^(BOOL finished) {
+        self.launcherTransitionActive = NO;
+        self.isLauncherVisible = YES;
+        [self saveLauncherState];
+        [self updateLauncherEntryMode];
     }];
 }
 
+- (void)handleLauncherDismissGesture:(UIPanGestureRecognizer *)gesture {
+    if (![self usesGestureLauncher] || !self.isLauncherVisible) return;
+    CGFloat translation = [gesture translationInView:self.launcherContainer.view].y;
+    if (gesture.state == UIGestureRecognizerStateChanged) {
+        self.launcherTransitionActive = YES;
+        self.launcherContainer.view.transform = CGAffineTransformMakeTranslation(0, MAX(0.0, translation));
+    } else if (gesture.state == UIGestureRecognizerStateEnded || gesture.state == UIGestureRecognizerStateCancelled) {
+        BOOL shouldClose = gesture.state == UIGestureRecognizerStateEnded && translation > self.launcherContainer.view.bounds.size.height * 0.18;
+        if (shouldClose) {
+            self.launcherTransitionActive = NO;
+            [self hideLauncher];
+        } else {
+            [UIView animateWithDuration:0.22 animations:^{
+                self.launcherContainer.view.transform = CGAffineTransformIdentity;
+            } completion:^(BOOL finished) {
+                self.launcherTransitionActive = NO;
+            }];
+        }
+    }
+}
+
 - (void)toggleLauncher {
+    if (self.launcherTransitionActive) return;
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: toggleLauncher"];
     if (self.isLauncherVisible) {
         [self hideLauncher];
@@ -490,8 +667,8 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     }
     
     self.overlayWindow.hidden = NO;
-    self.floatingButton.hidden = NO;
-    [self.floatingButton showOnWindow:self.overlayWindow];
+    self.floatingButton.hidden = [self usesGestureLauncher];
+    if (![self usesGestureLauncher]) [self.floatingButton showOnWindow:self.overlayWindow];
 }
 
 - (void)hideFloatingButton {
