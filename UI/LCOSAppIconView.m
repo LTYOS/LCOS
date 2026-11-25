@@ -45,8 +45,7 @@
         self.nameLabel.text = appModel.displayName;
         self.nameLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
         self.nameLabel.textColor = [UIColor whiteColor];
-        self.nameLabel.shadowColor = [UIColor colorWithWhite:0 alpha:0.65];
-        self.nameLabel.shadowOffset = CGSizeMake(0, 1);
+        self.nameLabel.shadowColor = nil;
         self.nameLabel.textAlignment = NSTextAlignmentCenter;
         self.nameLabel.lineBreakMode = NSLineBreakByTruncatingTail;
         self.nameLabel.numberOfLines = 1;
