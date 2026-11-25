@@ -103,7 +103,7 @@
             LCOSAppModel *app = apps[index];
             LCOSAppIconView *iconView = [[LCOSAppIconView alloc] initWithAppModel:app];
             [pageView addSubview:iconView];
-            iconView.translatesAutoresizingMaskIntoConstraints = Yes;
+            iconView.translatesAutoresizingMaskIntoConstraints = YES;
             [pageItems addObject:app];
         }
         [self.currentPageItems addObject:pageItems];

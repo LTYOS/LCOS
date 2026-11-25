@@ -53,7 +53,7 @@
         [self addSubview:self.scrollView];
 
         self.emptyLabel = [[UILabel alloc] init];
-        self.emptyLabel.text = @"无有已安装的应用";
+        self.emptyLabel.text = @"没有已安装的应用";
         self.emptyLabel.textColor = UIColor.secondaryLabelColor;
         self.emptyLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightMedium];
         self.emptyLabel.textAlignment = NSTextAlignmentCenter;
@@ -234,7 +234,7 @@
         CGFloat scale = 1.0 - 0.045 * distance;
         LCOSAppCardView *card = self.cards[i];
         if (self.dismissGesture.state != UIGestureRecognizerStateBegan &&
-            self.dismissGesture.state != UIGestureRecognizerStateChanged && !self.isDragging) {
+            self.dismissGesture.state != UIGestureRecognizerStateChanged && !self.scrollView.isDragging) {
             card.surface.transform = CGAffineTransformMakeScale(scale, scale);
         }
         card.titleLabel.alpha = 1.0 - distance * 0.45;
@@ -281,7 +281,7 @@
         BOOL remove = gesture.state == UIGestureRecognizerStateEnded &&
             (translation < -110 || [gesture velocityInView:self].y < -850);
         if (!remove) {
-            [UIView animateWithDuration:0.35 delay:0 usingSpringWithDamping:0.82 initialSpringVelocity:0 options:0 animations:^{
+            [UIView animateWithDuration:0.35 delay:0 usingSpringWithDamping:0.82 initialSpringVelocity:0 options:0 animations:{
                 card.surface.transform = CGAffineTransformIdentity;
                 card.alpha = 1;
             } completion:nil];
@@ -300,7 +300,7 @@
             [card removeFromSuperview];
             self.selectedIndex = MIN(index, (NSInteger)self.cards.count - 1);
             self.emptyLabel.hidden = self.cards.count > 0;
-            [UIView animateWithDuration:0.35 delay:0 usingSpringWithDamping:0.85 initialSpringVelocity:0 options:0 animations:^{
+            [UIView animateWithDuration:0.35 delay:0 usingSpringWithDamping:0.85 initialSpringVelocity:0 options:0 animations:{
                 [self layoutCardsWithoutRecentering];
             } completion:nil];
         }];

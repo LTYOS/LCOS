@@ -11,10 +11,10 @@
     if (self) {
         self.backgroundColor = UIColor.clearColor;
         self.clipsToBounds = NO;
-        self.accessibilityLabel = @"对谨条";
-        self.accessibilityHint = @"测迅边端滞动以当当打开同可或返回桌面";
+        self.accessibilityLabel = @"导航条";
+        self.accessibilityHint = @"沿边缘滑动以打开后台或返回桌面";
         if (@available(iOS 26.0, *)) {
-            self.glassView = [[UIVisualEffectView alloc] initWithEffect:[UIGlassEffect effect]];
+            self.glassView = [[UIVisualEffectView alloc] initWithEffect:[[UIGlassEffect alloc] init]];
         } else {
             self.glassView = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterial]];
         }
