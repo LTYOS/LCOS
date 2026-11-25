@@ -36,9 +36,10 @@ static NSDictionary<NSString *, NSNumber *> *LCOSDefaults(void) {
 }
 
 + (NSDictionary<NSString *,NSNumber *> *)values {
-    NSMutableDictionary *values = [LCOSDefaults() mutableCopy];
+    NSDictionary<NSString *, NSNumber *> *defaultValues = LCOSDefaults();
+    NSMutableDictionary *values = [defaultValues mutableCopy];
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-    for (NSString *key in values) {
+    for (NSString *key in defaultValues) {
         NSString *storedKey = [kPrefix stringByAppendingString:key];
         if ([defaults objectForKey:storedKey]) {
             values[key] = @([self sanitizedValue:[defaults doubleForKey:storedKey] forKey:key]);
