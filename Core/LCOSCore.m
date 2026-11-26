@@ -609,7 +609,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 
 - (void)finishEdgeTransitionReturningHome:(BOOL)returningHome cancelled:(BOOL)cancelled {
     if (self.isBackgroundVisible) {
-        [UIView animateWithDuration:0.32 delay:0 usingSpringWithDamping:0.84 initialSpringVelocity:0 options:0 animations:{
+        [UIView animateWithDuration:0.32 delay:0 usingSpringWithDamping:0.84 initialSpringVelocity:0 options:0 animations:^{
             [self.backgroundView setTransitionProgress:returningHome ? 0.0 : 1.0];
             self.navigationBar.transform = CGAffineTransformIdentity;
             self.navigationBar.alpha = returningHome ? 0.65 : 0.0;
@@ -622,7 +622,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     }
     if (self.isLauncherVisible && returningHome) {
         self.launcherTransitionActive = YES;
-        [UIView animateWithDuration:0.28 delay:0 usingSpringWithDamping:0.86 initialSpringVelocity:0 options:0 animations:{
+        [UIView animateWithDuration:0.28 delay:0 usingSpringWithDamping:0.86 initialSpringVelocity:0 options:0 animations:^{
             self.launcherContainer.view.transform = CGAffineTransformMakeTranslation(self.launcherContainer.view.bounds.size.width, 0);
             self.navigationBar.transform = CGAffineTransformIdentity;
             self.navigationBar.alpha = 0;
@@ -632,7 +632,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         }];
         return;
     }
-    [UIView animateWithDuration:0.25 delay:0 usingSpringWithDamping:0.86 initialSpringVelocity:0 options:0 animations:{
+    [UIView animateWithDuration:0.25 delay:0 usingSpringWithDamping:0.86 initialSpringVelocity:0 options:0 animations:^{
         self.launcherContainer.view.transform = CGAffineTransformIdentity;
         self.navigationBar.transform = CGAffineTransformIdentity;
         self.navigationBar.alpha = 0;
@@ -690,7 +690,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 }
 
 - (void)animateBackgroundProgress:(CGFloat)progress completion:(void (^)(void))completion {
-    [UIView animateWithDuration:0.38 delay:0 usingSpringWithDamping:0.84 initialSpringVelocity:0 options:0 animations:{
+    [UIView animateWithDuration:0.38 delay:0 usingSpringWithDamping:0.84 initialSpringVelocity:0 options:0 animations:^{
         [self.backgroundView setTransitionProgress:progress];
     } completion:^(BOOL finished) { if (completion) completion(); }];
 }
@@ -819,7 +819,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 - (void)finishInteractivePresentation {
     self.launcherTransitionActive = YES;
     [self setLauncherRoundedCorners:NO];
-    [UIView animateWithDuration:0.22 delay:0 options:UIViewAnimationOptionCurveEaseOut animations:{
+    [UIView animateWithDuration:0.22 delay:0 options:UIViewAnimationOptionCurveEaseOut animations:^{
         self.launcherContainer.view.transform = CGAffineTransformIdentity;
     } completion:^(BOOL finished) {
         self.launcherTransitionActive = NO;
@@ -846,7 +846,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
             self.launcherTransitionActive = NO;
             [self hideLauncher];
         } else {
-            [UIView animateWithDuration:0.22 animations:{
+            [UIView animateWithDuration:0.22 animations:^{
                 self.launcherContainer.view.transform = CGAffineTransformIdentity;
             } completion:^(BOOL finished) {
                 self.launcherTransitionActive = NO;

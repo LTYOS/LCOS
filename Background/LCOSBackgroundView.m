@@ -205,7 +205,7 @@
     _transitionProgress = MAX(0, MIN(1, progress));
     self.dimView.alpha = 0.24 * _transitionProgress;
     self.sourceView.transform = CGAffineTransformMakeScale(1.0 - 0.035 * _transitionProgress,
-                                                             1.0 - 0.035 * _transitionProgress);
+                                                            1.0 - 0.035 * _transitionProgress);
     self.sourceView.layer.cornerRadius = 18 * _transitionProgress;
     self.sourceView.layer.cornerCurve = kCACornerCurveContinuous;
     self.scrollView.alpha = _transitionProgress;
@@ -234,7 +234,7 @@
         CGFloat scale = 1.0 - 0.045 * distance;
         LCOSAppCardView *card = self.cards[i];
         if (self.dismissGesture.state != UIGestureRecognizerStateBegan &&
-            self.dismissGesture.state != UIGestureRecognizerStateChanged && !self.scrollView.isDragging) {
+            self.dismissGesture.state != UIGestureRecognizerStateChanged && !self.isDragging) {
             card.surface.transform = CGAffineTransformMakeScale(scale, scale);
         }
         card.titleLabel.alpha = 1.0 - distance * 0.45;
@@ -281,7 +281,7 @@
         BOOL remove = gesture.state == UIGestureRecognizerStateEnded &&
             (translation < -110 || [gesture velocityInView:self].y < -850);
         if (!remove) {
-            [UIView animateWithDuration:0.35 delay:0 usingSpringWithDamping:0.82 initialSpringVelocity:0 options:0 animations:{
+            [UIView animateWithDuration:0.35 delay:0 usingSpringWithDamping:0.82 initialSpringVelocity:0 options:0 animations:^{
                 card.surface.transform = CGAffineTransformIdentity;
                 card.alpha = 1;
             } completion:nil];
@@ -300,7 +300,7 @@
             [card removeFromSuperview];
             self.selectedIndex = MIN(index, (NSInteger)self.cards.count - 1);
             self.emptyLabel.hidden = self.cards.count > 0;
-            [UIView animateWithDuration:0.35 delay:0 usingSpringWithDamping:0.85 initialSpringVelocity:0 options:0 animations:{
+            [UIView animateWithDuration:0.35 delay:0 usingSpringWithDamping:0.85 initialSpringVelocity:0 options:0 animations:^{
                 [self layoutCardsWithoutRecentering];
             } completion:nil];
         }];

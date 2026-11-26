@@ -14,7 +14,7 @@
         self.accessibilityLabel = @"导航条";
         self.accessibilityHint = @"沿边缘滑动以打开后台或返回桌面";
         if (@available(iOS 26.0, *)) {
-            self.glassView = [[UIVisualEffectView alloc] initWithEffect:[[UIGlassEffect alloc] init]];
+            self.glassView = [[UIVisualEffectView alloc] initWithEffect:[UIGlassEffect effect]];
         } else {
             self.glassView = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterial]];
         }

@@ -245,18 +245,18 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
 }
 
 - (void)closeTapped:(UIButton *)sender {
-    [[LCOSLogManager sharedManager] forceLog:@"LCOS Settings close tapped"];
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS Settings close tapped")];
     [self dismissViewControllerAnimated:YES completion:nil];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
-    [[LCOSLogManager sharedManager] forceLog:@"LCOS Settings viewDidAppear"];
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS Settings viewDidAppear")];
 }
 
 - (void)viewWillDisappear:(BOOL)animated {
     [super viewWillDisappear:animated];
-    [[LCOSLogManager sharedManager] forceLog:@"LCOS Settings viewWillDisappear"];
+    [[LCOSLogManager sharedManager] forceLog:@("LCOS Settings viewWillDisappear")];
 }
 
 @end
