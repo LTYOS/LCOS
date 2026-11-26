@@ -9,7 +9,7 @@
 #import "LCOSLogManager.h"
 #import "LCOSLayout.h"
 
-@interface LCOSGrid () <UIScrollViewDelegate>
+@interface LCOSGrid () <UIScrollViewDelegate, UIGestureRecognizerDelegate>
 @property (nonatomic, strong) UIScrollView *scrollView;
 @property (nonatomic, strong) UIPageControl *pageControl;
 @property (nonatomic, assign) NSInteger currentPage;
@@ -58,10 +58,13 @@
         tapGesture.delaysTouchesEnded = NO;
         tapGesture.numberOfTapsRequired = 1;
         tapGesture.numberOfTouchesRequired = 1;
+        tapGesture.delegate = self;
         [self.scrollView addGestureRecognizer:tapGesture];
 
-        // Pan gesture (scrolling/paging) requires tap to fail first
-        [self.scrollView.panGestureRecognizer requireGestureRecognizerToFail:tapGesture];
+        // A tap already fails when the finger travels. Do not make paging wait
+        // for it: that inverted priority prevented swipes in the page centre.
+        self.scrollView.panGestureRecognizer.delegate = self;
+        [tapGesture requireGestureRecognizerToFail:self.scrollView.panGestureRecognizer];
 
         self.pageControl = [[UIPageControl alloc] initWithFrame:CGRectZero];
         self.pageControl.hidesForSinglePage = YES;
@@ -219,6 +222,10 @@
     // Keep pan enabled: disabling it cancels an active finger sequence.
     // scrollEnabled suppresses paging; the tap callback checks this state
     // before launching an icon instead of cancelling an in-flight recognizer.
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+    return gestureRecognizer == self.scrollView.panGestureRecognizer || otherGestureRecognizer == self.scrollView.panGestureRecognizer;
 }
 
 - (void)gridTapGestureRecognized:(UITapGestureRecognizer *)gesture {
