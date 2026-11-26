@@ -13,6 +13,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, copy, readonly) NSString *bundlePath;
 @property (nonatomic, strong, readonly) UIImage *icon;
 @property (nonatomic, assign) BOOL isLaunching;
+@property (nonatomic, assign) BOOL launchFromLCOSDesktop;
 
 - (instancetype)initWithBundlePath:(NSString *)bundlePath NS_DESIGNATED_INITIALIZER;
 - (void)launch;
