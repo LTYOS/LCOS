@@ -81,6 +81,17 @@ static LCOSLogManager *_sharedInstance = nil;
     }
 }
 
+- (NSString *)siblingTweaksDirectory {
+    @synchronized(self) {
+        [self resolvePathsIfNeeded];
+        // runtime.json -> logs -> LCOS -> host root; Tweaks is next to LCOS.
+        NSString *root = self.runtimeLogPath.stringByDeletingLastPathComponent
+            .stringByDeletingLastPathComponent.stringByDeletingLastPathComponent;
+        if (!root.isAbsolutePath || ![self.runtimeLogPath.lastPathComponent isEqualToString:@"runtime.json"]) return nil;
+        return [root stringByAppendingPathComponent:@"Tweaks"].stringByStandardizingPath;
+    }
+}
+
 - (NSMutableArray *)readEventsFromPath:(NSString *)path {
     if (!path) return [NSMutableArray array];
     
