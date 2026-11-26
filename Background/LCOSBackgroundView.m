@@ -1,32 +1,24 @@
 #import "LCOSBackgroundView.h"
-#import "LCOSAppModel.h"
+#import <objc/runtime.h>
 
-@interface LCOSAppCardView : UIView
-@property (nonatomic, strong) LCOSAppModel *model;
-@property (nonatomic, strong) UIView *surface;
-@property (nonatomic, strong) UILabel *titleLabel;
-@end
+static char kLCOSTaskGeometryKey;
+static char kLCOSTaskRadiusKey;
 
-@implementation LCOSAppCardView
-@end
-
-@interface LCOSBackgroundView () <UIScrollViewDelegate, UIGestureRecognizerDelegate>
+@interface LCOSBackgroundView () <UIGestureRecognizerDelegate, UIScrollViewDelegate>
 @property (nonatomic, strong) UIView *sourceView;
+@property (nonatomic, strong) UIView *blurContainer;
 @property (nonatomic, strong) UIVisualEffectView *blurView;
-@property (nonatomic, strong) UIViewPropertyAnimator *blurAnimator;
 @property (nonatomic, strong) UIView *dimView;
 @property (nonatomic, strong) UIScrollView *scrollView;
-@property (nonatomic, strong) NSMutableArray<LCOSAppModel *> *apps;
-@property (nonatomic, strong) NSMutableArray<LCOSAppCardView *> *cards;
 @property (nonatomic, strong) UILabel *emptyLabel;
-@property (nonatomic, strong) UILabel *listTitleLabel;
-@property (nonatomic, strong) UIButton *returnButton;
-@property (nonatomic, strong) UIPanGestureRecognizer *dismissGesture;
-@property (nonatomic, strong) UISelectionFeedbackGenerator *selectionFeedback;
-@property (nonatomic, assign) NSInteger selectedIndex;
+@property (nonatomic, copy) NSArray<UIView *> *taskViews;
+@property (nonatomic, strong) NSMutableDictionary<NSValue *, NSValue *> *cardFrames;
+@property (nonatomic, assign) CGFloat stride;
 @property (nonatomic, assign) CGFloat transitionProgress;
-@property (nonatomic, assign) CGFloat cardWidth;
-@property (nonatomic, assign) CGFloat cardStride;
+@property (nonatomic, assign) BOOL presentingTask;
+@property (nonatomic, weak) UIView *draggedTask;
+@property (nonatomic, assign) CGAffineTransform dragBaseTransform;
+@property (nonatomic, weak) UIView *activatingTask;
 @end
 
 @implementation LCOSBackgroundView
@@ -36,318 +28,228 @@
     if (self) {
         self.backgroundColor = UIColor.clearColor;
         self.clipsToBounds = YES;
-        self.apps = [NSMutableArray array];
-        self.cards = [NSMutableArray array];
-
+        self.taskViews = @[];
+        self.cardFrames = [NSMutableDictionary dictionary];
+        self.blurContainer = [[UIView alloc] init];
+        self.blurContainer.clipsToBounds = YES;
+        [self addSubview:self.blurContainer];
         self.blurView = [[UIVisualEffectView alloc] initWithEffect:nil];
-        [self addSubview:self.blurView];
+        [self.blurContainer addSubview:self.blurView];
         self.dimView = [[UIView alloc] init];
-        self.dimView.backgroundColor = UIColor.blackColor;
+        self.dimView.backgroundColor = [UIColor colorWithWhite:0 alpha:0.18];
         self.dimView.alpha = 0;
         [self addSubview:self.dimView];
-
         self.scrollView = [[UIScrollView alloc] init];
+        self.scrollView.backgroundColor = UIColor.clearColor;
         self.scrollView.clipsToBounds = NO;
         self.scrollView.showsHorizontalScrollIndicator = NO;
         self.scrollView.decelerationRate = UIScrollViewDecelerationRateFast;
         self.scrollView.directionalLockEnabled = YES;
         self.scrollView.delegate = self;
         [self addSubview:self.scrollView];
-
-        self.listTitleLabel = [[UILabel alloc] init];
-        self.listTitleLabel.text = @"已安装应用 · 非运行后台";
-        self.listTitleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
-        self.listTitleLabel.textColor = UIColor.whiteColor;
-        [self addSubview:self.listTitleLabel];
-        self.returnButton = [UIButton buttonWithType:UIButtonTypeSystem];
-        self.returnButton.backgroundColor = [UIColor colorWithWhite:0 alpha:0.35];
-        self.returnButton.layer.cornerRadius = 18;
-        [self.returnButton setTitle:@"返回" forState:UIControlStateNormal];
-        [self.returnButton setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-        [self.returnButton addTarget:self action:@selector(returnTapped) forControlEvents:UIControlEventTouchUpInside];
-        [self addSubview:self.returnButton];
-
         self.emptyLabel = [[UILabel alloc] init];
-        self.emptyLabel.text = @"没有已安装的应用";
-        self.emptyLabel.textColor = UIColor.secondaryLabelColor;
+        self.emptyLabel.text = @"没有正在运行的 App";
+        self.emptyLabel.textColor = [UIColor colorWithWhite:1 alpha:0.85];
         self.emptyLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightMedium];
         self.emptyLabel.textAlignment = NSTextAlignmentCenter;
         self.emptyLabel.hidden = YES;
         [self addSubview:self.emptyLabel];
-
-        UITapGestureRecognizer *emptyTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(backgroundTapped:)];
-        emptyTap.cancelsTouchesInView = NO;
-        emptyTap.delegate = self;
-        [self addGestureRecognizer:emptyTap];
-
-        self.dismissGesture = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(dismissCardPan:)];
-        self.dismissGesture.delegate = self;
-        [self.scrollView addGestureRecognizer:self.dismissGesture];
-        [self.scrollView.panGestureRecognizer requireGestureRecognizerToFail:self.dismissGesture];
-        self.selectionFeedback = [[UISelectionFeedbackGenerator alloc] init];
-        [self setTransitionProgress:0];
+        UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTap:)];
+        tap.delegate = self;
+        [self addGestureRecognizer:tap];
+        UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
+        pan.delegate = self;
+        [self addGestureRecognizer:pan];
+        [self.scrollView.panGestureRecognizer requireGestureRecognizerToFail:pan];
     }
     return self;
 }
 
-- (void)dealloc {
-    [self.blurAnimator stopAnimation:YES];
+- (NSValue *)keyForTask:(UIView *)task {
+    return [NSValue valueWithNonretainedObject:task];
 }
 
-- (void)prepareWithCurrentInterface:(UIView *)interfaceView {
+- (void)setSourceDesktop:(UIView *)desktop {
+    if (self.sourceView.superview) [self restoreTaskGeometry];
     [self.sourceView removeFromSuperview];
-    // Never include this switcher's previous cards in its next backdrop.
-    self.hidden = YES;
-    [interfaceView layoutIfNeeded];
-    UIView *snapshot = [interfaceView snapshotViewAfterScreenUpdates:NO];
-    self.hidden = NO;
-    if (!snapshot) {
-        snapshot = [[UIView alloc] initWithFrame:self.bounds];
-        snapshot.backgroundColor = UIColor.systemBackgroundColor;
-    }
-    self.sourceView = snapshot;
-    self.sourceView.clipsToBounds = YES;
-    [self insertSubview:self.sourceView atIndex:0];
-    self.sourceView.frame = self.bounds;
-    [self setTransitionProgress:self.transitionProgress];
+    self.sourceView = desktop;
+    if (!desktop) return;
+    desktop.userInteractionEnabled = NO;
+    [self insertSubview:desktop atIndex:0];
+    desktop.frame = self.blurContainer.bounds;
+    [self.blurContainer insertSubview:desktop atIndex:0];
+    [self setNeedsLayout];
 }
 
-- (void)setApps:(NSArray *)apps {
-    [self.apps setArray:apps ?: @[]];
-    for (LCOSAppCardView *card in self.cards) [card removeFromSuperview];
-    [self.cards removeAllObjects];
-    for (LCOSAppModel *app in self.apps) {
-        LCOSAppCardView *card = [[LCOSAppCardView alloc] init];
-        card.model = app;
-        card.backgroundColor = UIColor.clearColor;
-        card.clipsToBounds = NO;
-
-        card.surface = [[UIView alloc] init];
-        card.surface.backgroundColor = UIColor.secondarySystemBackgroundColor;
-        card.surface.layer.cornerRadius = 18;
-        card.surface.layer.cornerCurve = kCACornerCurveContinuous;
-        card.surface.layer.borderWidth = 0.5;
-        card.surface.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.18].CGColor;
-        card.layer.shadowColor = UIColor.blackColor.CGColor;
-        card.layer.shadowOpacity = 0.22;
-        card.layer.shadowRadius = 22;
-        card.layer.shadowOffset = CGSizeMake(0, 12);
-        card.surface.clipsToBounds = YES;
-        [card addSubview:card.surface];
-
-        // This is deliberately an entry card, not a fake running-app snapshot.
-        UIImageView *icon = [[UIImageView alloc] initWithImage:app.icon];
-        icon.contentMode = UIViewContentModeScaleAspectFit;
-        icon.layer.cornerRadius = 20;
-        icon.layer.cornerCurve = kCACornerCurveContinuous;
-        icon.clipsToBounds = YES;
-        [card.surface addSubview:icon];
-        UILabel *entry = [[UILabel alloc] init];
-        entry.text = @"已安装应用 · 点击启动";
-        entry.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
-        entry.textColor = UIColor.secondaryLabelColor;
-        entry.textAlignment = NSTextAlignmentCenter;
-        [card.surface addSubview:entry];
-
-        card.titleLabel = [[UILabel alloc] init];
-        card.titleLabel.text = app.displayName;
-        card.titleLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold];
-        card.titleLabel.textColor = UIColor.whiteColor;
-        card.titleLabel.textAlignment = NSTextAlignmentCenter;
-        card.titleLabel.lineBreakMode = NSLineBreakByTruncatingTail;
-        card.titleLabel.layer.shadowColor = UIColor.blackColor.CGColor;
-        card.titleLabel.layer.shadowOpacity = 0.4;
-        card.titleLabel.layer.shadowRadius = 4;
-        card.titleLabel.layer.shadowOffset = CGSizeZero;
-        [card addSubview:card.titleLabel];
-
-        icon.translatesAutoresizingMaskIntoConstraints = NO;
-        entry.translatesAutoresizingMaskIntoConstraints = NO;
-        [NSLayoutConstraint activateConstraints:@[
-            [icon.centerXAnchor constraintEqualToAnchor:card.surface.centerXAnchor],
-            [icon.centerYAnchor constraintEqualToAnchor:card.surface.centerYAnchor constant:-12],
-            [icon.widthAnchor constraintEqualToConstant:82],
-            [icon.heightAnchor constraintEqualToConstant:82],
-            [entry.centerXAnchor constraintEqualToAnchor:card.surface.centerXAnchor],
-            [entry.topAnchor constraintEqualToAnchor:icon.bottomAnchor constant:20],
-        ]];
-
-        UITapGestureRecognizer *open = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(openCard:)];
-        [open requireGestureRecognizerToFail:self.dismissGesture];
-        [card addGestureRecognizer:open];
-        [self.scrollView addSubview:card];
-        [self.cards addObject:card];
+- (void)setLiveTaskViews:(NSArray<UIView *> *)taskViews {
+    [self restoreTaskGeometry];
+    self.taskViews = [taskViews copy];
+    [self.cardFrames removeAllObjects];
+    self.emptyLabel.hidden = self.taskViews.count > 0;
+    for (UIView *task in self.taskViews) {
+        if (!objc_getAssociatedObject(task, &kLCOSTaskGeometryKey)) {
+            NSDictionary *geometry = @{@"transform": [NSValue valueWithCGAffineTransform:task.transform],
+                @"center": [NSValue valueWithCGPoint:task.center], @"alpha": @(task.alpha),
+                @"hidden": @(task.hidden), @"interaction": @(task.userInteractionEnabled)};
+            objc_setAssociatedObject(task, &kLCOSTaskGeometryKey, geometry, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(task, &kLCOSTaskRadiusKey, @(task.layer.cornerRadius), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        task.hidden = NO;
+        task.alpha = 1;
+        task.userInteractionEnabled = NO;
+        [task.superview bringSubviewToFront:task];
     }
-    self.emptyLabel.hidden = self.cards.count > 0;
-    self.selectedIndex = 0;
-    [self layoutIfNeeded];
-    self.scrollView.contentOffset = CGPointMake(-self.scrollView.contentInset.left, 0);
+    [self setNeedsLayout];
 }
 
-- (void)layoutCardsWithoutRecentering {
-    [self layoutSubviews];
-    if (self.cards.count) {
-        self.scrollView.contentOffset = CGPointMake(self.selectedIndex * self.cardStride - self.scrollView.contentInset.left, 0);
-    }
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    if (self.presentingTask) return nil;
+    UIView *hit = [super hitTest:point withEvent:event];
+    // The blurred desktop is decorative. Let the task card and blank-area
+    // gestures receive touches rather than allowing it to swallow the page.
+    if (hit == self.sourceView || [hit isDescendantOfView:self.sourceView] || hit == self.blurView) return self;
+    return hit;
 }
 
 - (void)layoutSubviews {
     [super layoutSubviews];
-    CGFloat width = self.bounds.size.width;
-    CGFloat height = self.bounds.size.height;
-    self.sourceView.frame = self.bounds;
-    self.blurView.frame = self.bounds;
+    if (self.presentingTask) return;
+    CGFloat width = self.bounds.size.width, height = self.bounds.size.height;
+    self.blurContainer.frame = self.bounds;
+    self.sourceView.frame = self.blurContainer.bounds;
+    self.blurView.frame = self.blurContainer.bounds;
     self.dimView.frame = self.bounds;
     self.scrollView.frame = self.bounds;
     self.emptyLabel.frame = CGRectMake(24, (height - 30) / 2, width - 48, 30);
-    self.listTitleLabel.frame = CGRectMake(24, self.safeAreaInsets.top + 18, width - 144, 36);
-    self.returnButton.frame = CGRectMake(width - 104, self.safeAreaInsets.top + 18, 80, 36);
-    self.cardWidth = MIN(360, width * 0.79);
-    self.cardStride = self.cardWidth + 10;
-    CGFloat cardHeight = MIN(570, height * 0.61);
-    CGFloat cardY = MAX(self.safeAreaInsets.top + 82, (height - cardHeight) / 2 + 10);
-    CGFloat sideInset = (width - self.cardWidth) / 2;
-    self.scrollView.contentInset = UIEdgeInsetsMake(0, sideInset, 0, sideInset);
-    self.scrollView.contentSize = CGSizeMake(self.cardStride * self.cards.count, height);
-    for (NSInteger i = 0; i < (NSInteger)self.cards.count; i++) {
-        LCOSAppCardView *card = self.cards[i];
-        card.frame = CGRectMake(i * self.cardStride, cardY, self.cardWidth, cardHeight);
-        card.surface.frame = CGRectMake(0, 34, self.cardWidth, cardHeight - 34);
-        card.titleLabel.frame = CGRectMake(8, 0, self.cardWidth - 16, 25);
+    UIEdgeInsets safe = self.safeAreaInsets;
+    CGFloat available = MAX(120, height - safe.top - safe.bottom - 70);
+    CGFloat cardWidth = MIN(width * 0.76, available * 0.58);
+    CGFloat cardHeight = MIN(available, cardWidth * 1.86);
+    self.stride = cardWidth + 20;
+    self.scrollView.contentInset = UIEdgeInsetsMake(0, (width - cardWidth) / 2, 0, (width - cardWidth) / 2);
+    self.scrollView.contentSize = CGSizeMake(self.stride * self.taskViews.count, height);
+    for (NSUInteger index = 0; index < self.taskViews.count; index++) {
+        UIView *task = self.taskViews[index];
+        CGSize source = task.bounds.size;
+        CGFloat aspect = source.width > 0 && source.height > 0 ? source.width / source.height : cardWidth / cardHeight;
+        CGFloat w = MIN(cardWidth, cardHeight * aspect);
+        CGFloat h = MIN(cardHeight, cardWidth / aspect);
+        CGRect frame = CGRectMake(index * self.stride + (cardWidth - w) / 2,
+            safe.top + (available - h) / 2, w, h);
+        self.cardFrames[self.keyForTask(task)] = [NSValue valueWithCGRect:frame];
+        if (self.sourceView.superview && self.transitionProgress > 0) [self placeTaskInCard:task];
     }
-    [self updateCardScales];
+}
+
+- (void)placeTaskInCard:(UIView *)task {
+    NSValue *value = self.cardFrames[self.keyForTask(task)];
+    if (!value || !self.sourceView.superview || !task.superview) return;
+    CGRect frame = [self.scrollView convertRect:value.CGRectValue toView:self.sourceView.superview];
+    CGSize source = task.bounds.size;
+    if (source.width < 1 || source.height < 1 || CGRectIsEmpty(frame)) return;
+    CGAffineTransform original = [objc_getAssociatedObject(task, &kLCOSTaskGeometryKey)[@"transform"] CGAffineTransformValue];
+    task.transform = CGAffineTransformConcat(original, CGAffineTransformMakeScale(frame.size.width / source.width, frame.size.height / source.height));
+    task.center = [self.sourceView.superview convertPoint:CGPointMake(CGRectGetMidX(frame), CGRectGetMidY(frame)) toView:task.superview];
+    task.layer.cornerRadius = 20.0 / MAX(0.01, frame.size.width / source.width);
+    task.layer.cornerCurve = kCACornerCurveContinuous;
+    task.layer.masksToBounds = YES;
 }
 
 - (void)setTransitionProgress:(CGFloat)progress {
     _transitionProgress = MAX(0, MIN(1, progress));
-    self.dimView.alpha = 0.24 * _transitionProgress;
-    self.listTitleLabel.alpha = _transitionProgress;
-    self.returnButton.alpha = _transitionProgress;
-    self.returnButton.enabled = _transitionProgress > 0.85;
-    self.sourceView.transform = CGAffineTransformMakeScale(1.0 - 0.035 * _transitionProgress,
-                                                            1.0 - 0.035 * _transitionProgress);
-    self.sourceView.layer.cornerRadius = 18 * _transitionProgress;
-    self.sourceView.layer.cornerCurve = kCACornerCurveContinuous;
+    self.dimView.alpha = 0.18 * _transitionProgress;
     self.scrollView.alpha = _transitionProgress;
-    self.scrollView.transform = CGAffineTransformConcat(CGAffineTransformMakeTranslation(44 * (1 - _transitionProgress), 0),
-        CGAffineTransformMakeScale(0.96 + 0.04 * _transitionProgress, 0.96 + 0.04 * _transitionProgress));
-    if (_transitionProgress > 0 && !self.blurAnimator) {
-        UIBlurEffect *effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterial];
-        self.blurAnimator = [[UIViewPropertyAnimator alloc] initWithDuration:1 curve:UIViewAnimationCurveLinear animations:^{
-            self.blurView.effect = effect;
-        }];
-        self.blurAnimator.pausesOnCompletion = YES;
+    self.emptyLabel.alpha = _transitionProgress;
+    if (_transitionProgress > 0) [self layoutSubviews];
+    self.blurContainer.transform = CGAffineTransformMakeScale(1.0 - 0.035 * _transitionProgress, 1.0 - 0.035 * _transitionProgress);
+    self.blurContainer.layer.cornerRadius = 18 * _transitionProgress;
+    self.blurContainer.layer.cornerCurve = kCACornerCurveContinuous;
+    if (_transitionProgress > 0 && !self.blurView.effect) {
+        self.blurView.effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark];
     }
-    self.blurAnimator.fractionComplete = _transitionProgress;
-}
-
-- (LCOSAppCardView *)selectedCard {
-    if (self.selectedIndex < 0 || self.selectedIndex >= (NSInteger)self.cards.count) return nil;
-    return self.cards[self.selectedIndex];
-}
-
-- (void)updateCardScales {
-    if (self.cardStride <= 0) return;
-    CGFloat center = self.scrollView.contentOffset.x + self.scrollView.contentInset.left;
-    for (NSInteger i = 0; i < (NSInteger)self.cards.count; i++) {
-        CGFloat distance = MIN(1, ABS(center - i * self.cardStride) / self.cardStride);
-        CGFloat scale = 1.0 - 0.045 * distance;
-        LCOSAppCardView *card = self.cards[i];
-        if (self.dismissGesture.state != UIGestureRecognizerStateBegan &&
-            self.dismissGesture.state != UIGestureRecognizerStateChanged && !self.scrollView.isDragging) {
-            card.surface.transform = CGAffineTransformMakeScale(scale, scale);
-        }
-        card.titleLabel.alpha = 1.0 - distance * 0.45;
-    }
-    NSInteger nearest = MAX(0, MIN((NSInteger)self.cards.count - 1,
-                                   (NSInteger)floor(center / self.cardStride + 0.5)));
-    if (nearest != self.selectedIndex && self.scrollView.isDragging) {
-        self.selectedIndex = nearest;
-        [self.selectionFeedback selectionChanged];
-    }
+    self.blurView.alpha = _transitionProgress;
 }
 
 - (void)scrollViewDidScroll:(UIScrollView *)scrollView {
-    [self updateCardScales];
+    [self layoutSubviews];
 }
 
-- (void)scrollViewWillEndDragging:(UIScrollView *)scrollView withVelocity:(CGPoint)velocity targetContentOffset:(CGPoint *)targetContentOffset {
-    if (self.cardStride <= 0 || !self.cards.count) return;
-    CGFloat proposed = targetContentOffset->x + scrollView.contentInset.left;
-    NSInteger index = MAX(0, MIN((NSInteger)self.cards.count - 1, (NSInteger)round(proposed / self.cardStride)));
-    targetContentOffset->x = index * self.cardStride - scrollView.contentInset.left;
+- (void)restoreTaskGeometry {
+    [self.layer removeAllAnimations];
+    for (UIView *task in self.taskViews) {
+        if (self.presentingTask && task == self.activatingTask) continue;
+        NSDictionary *geometry = objc_getAssociatedObject(task, &kLCOSTaskGeometryKey);
+        if (!geometry) continue;
+        task.transform = [geometry[@"transform"] CGAffineTransformValue];
+        task.center = [geometry[@"center"] CGPointValue];
+        task.alpha = [geometry[@"alpha"] doubleValue];
+        task.hidden = [geometry[@"hidden"] boolValue];
+        task.userInteractionEnabled = [geometry[@"interaction"] boolValue];
+        task.layer.cornerRadius = [objc_getAssociatedObject(task, &kLCOSTaskRadiusKey) doubleValue];
+        task.layer.masksToBounds = YES;
+    }
 }
 
-- (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView {
-    [self updateCardScales];
-}
-
-- (void)openCard:(UITapGestureRecognizer *)gesture {
-    LCOSAppCardView *card = (LCOSAppCardView *)gesture.view;
-    if (![card isKindOfClass:LCOSAppCardView.class]) return;
-    [UIView animateWithDuration:0.15 animations:^{ card.surface.transform = CGAffineTransformMakeScale(0.97, 0.97); }
-                     completion:^(BOOL finished) { [card.model launch]; }];
-}
-
-- (void)dismissCardPan:(UIPanGestureRecognizer *)gesture {
-    LCOSAppCardView *card = self.selectedCard;
-    if (!card) return;
-    CGFloat translation = [gesture translationInView:self].y;
-    if (gesture.state == UIGestureRecognizerStateChanged) {
-        CGFloat upward = MIN(0, translation);
-        card.surface.transform = CGAffineTransformMakeTranslation(0, upward);
-        card.alpha = MAX(0.2, 1.0 + upward / (self.bounds.size.height * 0.65));
-    } else if (gesture.state == UIGestureRecognizerStateEnded || gesture.state == UIGestureRecognizerStateCancelled) {
-        BOOL remove = gesture.state == UIGestureRecognizerStateEnded &&
-            (translation < -110 || [gesture velocityInView:self].y < -850);
-        if (!remove) {
-            [UIView animateWithDuration:0.35 delay:0 usingSpringWithDamping:0.82 initialSpringVelocity:0 options:0 animations:^{
-                card.surface.transform = CGAffineTransformIdentity;
-                card.alpha = 1;
-            } completion:nil];
-            return;
-        }
-        NSInteger index = self.selectedIndex;
-        UIImpactFeedbackGenerator *feedback = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
-        [feedback impactOccurred];
-        [UIView animateWithDuration:0.25 delay:0 options:UIViewAnimationOptionCurveEaseIn animations:^{
-            card.surface.transform = CGAffineTransformMakeTranslation(70, -self.bounds.size.height * 0.65);
-            card.alpha = 0;
+- (void)handleTap:(UITapGestureRecognizer *)gesture {
+    if (gesture.state != UIGestureRecognizerStateEnded) return;
+    CGPoint location = [gesture locationInView:self.scrollView];
+    for (UIView *task in self.taskViews) {
+        if (!CGRectContainsPoint([self.cardFrames[self.keyForTask(task)] CGRectValue], location)) continue;
+        if (!self.onActivateTask || !self.onActivateTask(task)) return;
+        NSDictionary *geometry = objc_getAssociatedObject(task, &kLCOSTaskGeometryKey);
+        self.presentingTask = YES;
+        self.activatingTask = task;
+        [UIView animateWithDuration:0.28 delay:0 options:UIViewAnimationOptionCurveEaseInOut animations:^{
+            task.transform = [geometry[@"transform"] CGAffineTransformValue];
+            task.center = [geometry[@"center"] CGPointValue];
+            task.layer.cornerRadius = [objc_getAssociatedObject(task, &kLCOSTaskRadiusKey) doubleValue];
+            self.alpha = 0;
         } completion:^(BOOL finished) {
-            if (index >= (NSInteger)self.cards.count) return;
-            [self.cards removeObjectAtIndex:index];
-            [self.apps removeObjectAtIndex:index];
-            [card removeFromSuperview];
-            self.selectedIndex = MIN(index, (NSInteger)self.cards.count - 1);
-            self.emptyLabel.hidden = self.cards.count > 0;
-            [UIView animateWithDuration:0.35 delay:0 usingSpringWithDamping:0.85 initialSpringVelocity:0 options:0 animations:^{
-                [self layoutCardsWithoutRecentering];
-            } completion:nil];
+            [self.sourceView removeFromSuperview];
+            [self removeFromSuperview];
+            self.sourceView = nil;
+            self.presentingTask = NO;
+            self.activatingTask = nil;
+            self.alpha = 1;
+            if (self.onTaskPresented) self.onTaskPresented(task);
         }];
+        return;
+    }
+    if (self.onHome) self.onHome();
+}
+
+- (void)handlePan:(UIPanGestureRecognizer *)gesture {
+    CGPoint location = [gesture locationInView:self.scrollView];
+    UIView *task = nil;
+    for (UIView *candidate in self.taskViews) {
+        if (CGRectContainsPoint([self.cardFrames[self.keyForTask(candidate)] CGRectValue], location)) { task = candidate; break; }
+    }
+    if (!task) return;
+    CGFloat translation = [gesture translationInView:self].y;
+    if (gesture.state == UIGestureRecognizerStateBegan) {
+        [self placeTaskInCard:task];
+        self.draggedTask = task;
+        self.dragBaseTransform = task.transform;
+    } else if (gesture.state == UIGestureRecognizerStateChanged) {
+        task.transform = CGAffineTransformConcat(self.dragBaseTransform, CGAffineTransformMakeTranslation(0, MIN(0, translation)));
+    } else if (gesture.state == UIGestureRecognizerStateEnded || gesture.state == UIGestureRecognizerStateCancelled) {
+        self.draggedTask = nil;
+        BOOL remove = gesture.state == UIGestureRecognizerStateEnded &&
+            (translation < -100 || [gesture velocityInView:self].y < -800);
+        if (remove && self.onCloseTask && self.onCloseTask(task)) return;
+        [UIView animateWithDuration:0.25 animations:^{ [self placeTaskInCard:task]; }];
     }
 }
 
 - (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer {
-    if (gestureRecognizer == self.dismissGesture) {
-        CGPoint velocity = [self.dismissGesture velocityInView:self];
-        return self.cards.count > 0 && velocity.y < 0 && ABS(velocity.y) > ABS(velocity.x);
+    if ([gestureRecognizer isKindOfClass:UIPanGestureRecognizer.class]) {
+        return [(UIPanGestureRecognizer *)gestureRecognizer velocityInView:self].y < 0;
     }
     return YES;
 }
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
-    if ([gestureRecognizer isKindOfClass:UITapGestureRecognizer.class] && gestureRecognizer.view == self) {
-        return ![touch.view isDescendantOfView:self.scrollView];
-    }
     return YES;
-}
-
-- (void)returnTapped {
-    if (self.onClose) self.onClose();
-}
-
-- (void)backgroundTapped:(UITapGestureRecognizer *)gesture {
-    if (gesture.state == UIGestureRecognizerStateEnded && self.onEmptySpaceTapped) self.onEmptySpaceTapped();
 }
 
 @end
