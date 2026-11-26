@@ -234,7 +234,7 @@
         CGFloat scale = 1.0 - 0.045 * distance;
         LCOSAppCardView *card = self.cards[i];
         if (self.dismissGesture.state != UIGestureRecognizerStateBegan &&
-            self.dismissGesture.state != UIGestureRecognizerStateChanged && !self.isDragging) {
+            self.dismissGesture.state != UIGestureRecognizerStateChanged && !self.scrollView.isDragging) {
             card.surface.transform = CGAffineTransformMakeScale(scale, scale);
         }
         card.titleLabel.alpha = 1.0 - distance * 0.45;
