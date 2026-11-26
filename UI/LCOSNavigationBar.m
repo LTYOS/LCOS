@@ -11,11 +11,13 @@
     if (self) {
         self.backgroundColor = UIColor.clearColor;
         self.clipsToBounds = NO;
+        self.accessibilityIgnoresInvertColors = YES;
         self.accessibilityLabel = @"导航条";
         self.accessibilityHint = @"向左滑动返回桌面，停住进入后台";
         self.solidPill = [[UIView alloc] init];
         self.solidPill.backgroundColor = UIColor.whiteColor;
         self.solidPill.userInteractionEnabled = NO;
+        self.solidPill.accessibilityIgnoresInvertColors = YES;
         self.solidPill.layer.cornerRadius = 2.5;
         self.solidPill.layer.cornerCurve = kCACornerCurveContinuous;
         [self addSubview:self.solidPill];
@@ -27,7 +29,7 @@
     [super layoutSubviews];
     CGFloat width = 5.0;
     CGFloat height = MIN(134.0, self.bounds.size.height);
-    self.solidPill.frame = CGRectMake(self.bounds.size.width - width - 1.0,
+    self.solidPill.frame = CGRectMake(self.bounds.size.width - width - 6.0,
         (self.bounds.size.height - height) / 2.0, width, height);
 }
 
