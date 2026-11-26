@@ -954,7 +954,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     if (![controller respondsToSelector:close]) return NO;
     for (NSValue *entry in [LCOSTaskWindows() copy]) if (entry.nonretainedObjectValue == task) [LCOSTaskWindows() removeObject:entry];
     [self.backgroundView restoreTaskGeometry];
-    [self.backgroundView.sourceView removeFromSuperview];
+    [self.backgroundView detachSourceDesktop];
     [self.backgroundView removeFromSuperview];
     self.sourceDesktopView = nil;
     self.backgroundView = nil;
@@ -1031,7 +1031,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     [self animateBackgroundProgress:0.0 completion:^{
         [self.backgroundView restoreTaskGeometry];
         self.backgroundView.hidden = YES;
-        [self.backgroundView.sourceView removeFromSuperview];
+        [self.backgroundView detachSourceDesktop];
         [self.backgroundView removeFromSuperview];
         [self restoreLiveTaskTransitionStates];
         [self restoreSourceDesktop];
