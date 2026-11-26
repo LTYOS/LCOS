@@ -3,6 +3,8 @@
 
 static char kLCOSTaskGeometryKey;
 static char kLCOSTaskRadiusKey;
+static char kLCOSTaskParentKey;
+static char kLCOSTaskParentIndexKey;
 
 @interface LCOSBackgroundView () <UIGestureRecognizerDelegate, UIScrollViewDelegate>
 @property (nonatomic, strong) UIView *sourceView;
@@ -16,6 +18,8 @@ static char kLCOSTaskRadiusKey;
 @property (nonatomic, assign) CGFloat stride;
 @property (nonatomic, assign) CGFloat transitionProgress;
 @property (nonatomic, assign) BOOL presentingTask;
+@property (nonatomic, assign) BOOL closingTask;
+@property (nonatomic, assign) BOOL sourceScales;
 @property (nonatomic, weak) UIView *draggedTask;
 @property (nonatomic, assign) CGAffineTransform dragBaseTransform;
 @property (nonatomic, weak) UIView *activatingTask;
@@ -28,6 +32,7 @@ static char kLCOSTaskRadiusKey;
     if (self) {
         self.backgroundColor = UIColor.clearColor;
         self.clipsToBounds = YES;
+        self.sourceScales = YES;
         self.taskViews = @[];
         self.cardFrames = [NSMutableDictionary dictionary];
         self.blurContainer = [[UIView alloc] init];
@@ -70,15 +75,19 @@ static char kLCOSTaskRadiusKey;
 }
 
 - (void)detachSourceDesktop {
-    [self.sourceView removeFromSuperview];
+    if (![self.sourceView isKindOfClass:UIWindow.class]) [self.sourceView removeFromSuperview];
     self.sourceView = nil;
 }
 
 - (void)setSourceDesktop:(UIView *)desktop {
-    if (self.sourceView.superview) [self restoreTaskGeometry];
+    if ([desktop isKindOfClass:UIWindow.class]) {
+        self.sourceView = desktop;
+        return;
+    }
+    if (self.sourceView.superview && self.sourceView != self.blurContainer) [self restoreTaskGeometry];
     [self.sourceView removeFromSuperview];
     self.sourceView = desktop;
-    if (!desktop || desktop == self || [self isDescendantOfView:desktop]) return;
+    if (desktop == self || [self isDescendantOfView:desktop]) return;
     desktop.userInteractionEnabled = NO;
     desktop.frame = self.blurContainer.bounds;
     [self.blurContainer insertSubview:desktop atIndex:0];
@@ -86,7 +95,7 @@ static char kLCOSTaskRadiusKey;
 }
 
 - (void)setLiveTaskViews:(NSArray<UIView *> *)taskViews {
-    [self restoreTaskGeometry];
+    if (![taskViews isKindOfClass:NSArray.class]) return;
     self.taskViews = [taskViews copy];
     [self.cardFrames removeAllObjects];
     self.emptyLabel.hidden = self.taskViews.count > 0;
@@ -97,17 +106,25 @@ static char kLCOSTaskRadiusKey;
                 @"hidden": @(task.hidden), @"interaction": @(task.userInteractionEnabled)};
             objc_setAssociatedObject(task, &kLCOSTaskGeometryKey, geometry, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             objc_setAssociatedObject(task, &kLCOSTaskRadiusKey, @(task.layer.cornerRadius), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(task, &kLCOSTaskParentKey, task.superview, OBJC_ASSOCIATION_ASSIGN);
+            NSUInteger index = [task.superview.subviews indexOfObjectIdenticalTo:task];
+            objc_setAssociatedObject(task, &kLCOSTaskParentIndexKey, @(index), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         }
+        UIView *container = [[UIView alloc] initWithFrame:task.bounds];
+        container.clipsToBounds = NO;
+        [self.scrollView addSubview:container];
         task.hidden = NO;
         task.alpha = 1;
         task.userInteractionEnabled = NO;
-        [task.superview bringSubviewToFront:task];
+        task.layer.zPosition = 2 + self.taskViews.count;
+        [container addSubview:task];
     }
     [self setNeedsLayout];
 }
 
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     if (self.presentingTask) return nil;
+    if (self.scrollView.dragging || self.scrollView.decelerating) return self.scrollView;
     UIView *hit = [super hitTest:point withEvent:event];
     // The blurred desktop is decorative. Let the task card and blank-area
     // gestures receive touches rather than allowing it to swallow the page.
@@ -122,6 +139,8 @@ static char kLCOSTaskRadiusKey;
     self.blurContainer.frame = self.bounds;
     self.sourceView.frame = self.blurContainer.bounds;
     self.blurView.frame = self.blurContainer.bounds;
+    self.blurContainer.hidden = !self.sourceView;
+    self.blurView.alpha = self.sourceView ? _transitionProgress : 0;
     self.dimView.frame = self.bounds;
     self.scrollView.frame = self.bounds;
     self.emptyLabel.frame = CGRectMake(24, (height - 30) / 2, width - 48, 30);
@@ -131,6 +150,7 @@ static char kLCOSTaskRadiusKey;
     CGFloat cardHeight = MIN(available, cardWidth * 1.86);
     self.stride = cardWidth + 20;
     self.scrollView.contentInset = UIEdgeInsetsMake(0, (width - cardWidth) / 2, 0, (width - cardWidth) / 2);
+    self.scrollView.contentOffset = CGPointMake(-self.scrollView.contentInset.left, 0);
     self.scrollView.contentSize = CGSizeMake(self.stride * self.taskViews.count, height);
     for (NSUInteger index = 0; index < self.taskViews.count; index++) {
         UIView *task = self.taskViews[index];
@@ -141,20 +161,31 @@ static char kLCOSTaskRadiusKey;
         CGRect frame = CGRectMake(index * self.stride + (cardWidth - w) / 2,
             safe.top + (available - h) / 2, w, h);
         self.cardFrames[[self keyForTask:task]] = [NSValue valueWithCGRect:frame];
-        if (self.sourceView.superview && self.transitionProgress > 0) [self placeTaskInCard:task];
+        UIView *container = task.superview;
+        if (!self.presentingTask && !self.closingTask && container != self.scrollView) {
+            container.frame = frame;
+            container.clipsToBounds = NO;
+            container.layer.shadowColor = UIColor.blackColor.CGColor;
+            container.layer.shadowOpacity = 0.28;
+            container.layer.shadowRadius = 16;
+            container.layer.shadowOffset = CGSizeMake(0, 8);
+        }
+        if (self.transitionProgress > 0 && task != self.draggedTask) [self placeTaskInCard:task];
     }
 }
 
 - (void)placeTaskInCard:(UIView *)task {
     NSValue *value = self.cardFrames[[self keyForTask:task]];
-    if (!value || !self.sourceView.superview || !task.superview) return;
-    CGRect frame = [self.scrollView convertRect:value.CGRectValue toView:self.sourceView.superview];
+    if (!value || !task.superview) return;
+    CGRect frame = value.CGRectValue;
     CGSize source = task.bounds.size;
     if (source.width < 1 || source.height < 1 || CGRectIsEmpty(frame)) return;
+    CGFloat scale = frame.size.width / source.width;
     CGAffineTransform original = [objc_getAssociatedObject(task, &kLCOSTaskGeometryKey)[@"transform"] CGAffineTransformValue];
-    task.transform = CGAffineTransformConcat(original, CGAffineTransformMakeScale(frame.size.width / source.width, frame.size.height / source.height));
-    task.center = [self.sourceView.superview convertPoint:CGPointMake(CGRectGetMidX(frame), CGRectGetMidY(frame)) toView:task.superview];
-    task.layer.cornerRadius = 20.0 / MAX(0.01, frame.size.width / source.width);
+    task.transform = CGAffineTransformConcat(original, CGAffineTransformMakeScale(scale, scale));
+    task.center = CGPointMake(CGRectGetMidX(task.superview.bounds), CGRectGetMidY(task.superview.bounds));
+    task.layer.cornerRadius = 60.0 / MAX(0.01, scale);
+    task.layer.maskedCorners = kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner | kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner;
     task.layer.cornerCurve = kCACornerCurveContinuous;
     task.layer.masksToBounds = YES;
 }
@@ -165,8 +196,8 @@ static char kLCOSTaskRadiusKey;
     self.scrollView.alpha = _transitionProgress;
     self.emptyLabel.alpha = _transitionProgress;
     if (_transitionProgress > 0) [self layoutSubviews];
-    self.blurContainer.transform = CGAffineTransformMakeScale(1.0 - 0.035 * _transitionProgress, 1.0 - 0.035 * _transitionProgress);
-    self.blurContainer.layer.cornerRadius = 18 * _transitionProgress;
+    self.blurContainer.transform = self.sourceScales ? CGAffineTransformMakeScale(1.0 - 0.035 * _transitionProgress, 1.0 - 0.035 * _transitionProgress) : CGAffineTransformIdentity;
+    self.blurContainer.layer.cornerRadius = self.sourceScales ? 18 * _transitionProgress : 0;
     self.blurContainer.layer.cornerCurve = kCACornerCurveContinuous;
     if (_transitionProgress > 0 && !self.blurView.effect) {
         self.blurView.effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark];
@@ -180,18 +211,51 @@ static char kLCOSTaskRadiusKey;
 
 - (void)restoreTaskGeometry {
     [self.layer removeAllAnimations];
+    if (self.closingTask) return;
     for (UIView *task in self.taskViews) {
-        if (self.presentingTask && task == self.activatingTask) continue;
         NSDictionary *geometry = objc_getAssociatedObject(task, &kLCOSTaskGeometryKey);
         if (!geometry) continue;
+        UIView *parent = objc_getAssociatedObject(task, &kLCOSTaskParentKey);
+        NSUInteger index = [objc_getAssociatedObject(task, &kLCOSTaskParentIndexKey) unsignedIntegerValue];
+        if (parent && task.superview != parent) [parent insertSubview:task atIndex:MIN(index, parent.subviews.count)];
         task.transform = [geometry[@"transform"] CGAffineTransformValue];
         task.center = [geometry[@"center"] CGPointValue];
         task.alpha = [geometry[@"alpha"] doubleValue];
         task.hidden = [geometry[@"hidden"] boolValue];
         task.userInteractionEnabled = [geometry[@"interaction"] boolValue];
         task.layer.cornerRadius = [objc_getAssociatedObject(task, &kLCOSTaskRadiusKey) doubleValue];
+        task.layer.maskedCorners = kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner | kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner;
         task.layer.masksToBounds = YES;
+        task.layer.zPosition = 0;
     }
+    for (UIView *container in [self.scrollView.subviews copy]) [container removeFromSuperview];
+}
+
+- (void)prepareForTaskActivation {
+    self.presentingTask = YES;
+    [self.layer removeAllAnimations];
+    [self.scrollView.layer removeAllAnimations];
+}
+
+- (void)removeTaskFromCards:(UIView *)task {
+    if (!task || ![self.taskViews containsObject:task]) return;
+    self.closingTask = YES;
+    [self restoreTaskGeometry];
+    NSMutableArray *tasks = [self.taskViews mutableCopy];
+    [tasks removeObjectIdenticalTo:task];
+    self.taskViews = tasks;
+    [self.cardFrames removeObjectForKey:[self keyForTask:task]];
+    objc_setAssociatedObject(task, &kLCOSTaskGeometryKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(task, &kLCOSTaskRadiusKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    self.closingTask = NO;
+    self.emptyLabel.hidden = self.taskViews.count > 0;
+    self.stride = 0;
+    [self layoutIfNeeded];
+    [self setNeedsLayout];
+}
+
+- (void)setSourceScales:(BOOL)scales {
+    _sourceScales = scales;
 }
 
 - (void)handleTap:(UITapGestureRecognizer *)gesture {
@@ -200,18 +264,36 @@ static char kLCOSTaskRadiusKey;
     for (UIView *task in self.taskViews) {
         if (!CGRectContainsPoint([self.cardFrames[[self keyForTask:task]] CGRectValue], location)) continue;
         if (!self.onActivateTask || !self.onActivateTask(task)) return;
+        UIView *container = task.superview;
+        UIView *parent = objc_getAssociatedObject(task, &kLCOSTaskParentKey);
+        NSUInteger index = [objc_getAssociatedObject(task, &kLCOSTaskParentIndexKey) unsignedIntegerValue];
         NSDictionary *geometry = objc_getAssociatedObject(task, &kLCOSTaskGeometryKey);
-        self.presentingTask = YES;
+        if (!parent || !geometry) return;
+        [self prepareForTaskActivation];
         self.activatingTask = task;
+        [self layoutIfNeeded];
+        [parent insertSubview:task atIndex:MIN(index, parent.subviews.count)];
+        [parent layoutIfNeeded];
+        UIWindow *targetWindow = parent.window;
+        CGRect target = [parent convertRect:[container convertRect:container.bounds toView:self.window] fromView:self.window];
+        if (targetWindow && targetWindow != self.window) {
+            CGPoint screenPoint = [self.window convertPoint:CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target)) toWindow:targetWindow];
+            target = [parent convertRect:CGRectMake(screenPoint.x - target.size.width / 2, screenPoint.y - target.size.height / 2, target.size.width, target.size.height) fromView:targetWindow];
+        }
+        task.transform = CGAffineTransformMakeScale(target.size.width / task.bounds.size.width, target.size.height / task.bounds.size.height);
+        task.center = CGPointMake(CGRectGetMidX(target), CGRectGetMidY(target));
+        task.alpha = 1;
+        task.hidden = NO;
         [UIView animateWithDuration:0.28 delay:0 options:UIViewAnimationOptionCurveEaseInOut animations:^{
             task.transform = [geometry[@"transform"] CGAffineTransformValue];
             task.center = [geometry[@"center"] CGPointValue];
             task.layer.cornerRadius = [objc_getAssociatedObject(task, &kLCOSTaskRadiusKey) doubleValue];
             self.alpha = 0;
         } completion:^(BOOL finished) {
-            [self.sourceView removeFromSuperview];
+            task.userInteractionEnabled = [geometry[@"interaction"] boolValue];
+            [self restoreTaskGeometry];
+            [self detachSourceDesktop];
             [self removeFromSuperview];
-            self.sourceView = nil;
             self.presentingTask = NO;
             self.activatingTask = nil;
             self.alpha = 1;
@@ -235,19 +317,22 @@ static char kLCOSTaskRadiusKey;
         self.draggedTask = task;
         self.dragBaseTransform = task.transform;
     } else if (gesture.state == UIGestureRecognizerStateChanged) {
-        task.transform = CGAffineTransformConcat(self.dragBaseTransform, CGAffineTransformMakeTranslation(0, MIN(0, translation)));
+        UIView *container = task.superview;
+        CGFloat travel = MIN(0, translation) / MAX(0.1, task.transform.a);
+        container.transform = CGAffineTransformMakeTranslation(0, travel);
     } else if (gesture.state == UIGestureRecognizerStateEnded || gesture.state == UIGestureRecognizerStateCancelled) {
         self.draggedTask = nil;
         BOOL remove = gesture.state == UIGestureRecognizerStateEnded &&
             (translation < -100 || [gesture velocityInView:self].y < -800);
         if (remove && self.onCloseTask && self.onCloseTask(task)) return;
-        [UIView animateWithDuration:0.25 animations:^{ [self placeTaskInCard:task]; }];
+        [UIView animateWithDuration:0.25 animations:^{ task.superview.transform = CGAffineTransformIdentity; }];
     }
 }
 
 - (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer {
     if ([gestureRecognizer isKindOfClass:UIPanGestureRecognizer.class]) {
-        return [(UIPanGestureRecognizer *)gestureRecognizer velocityInView:self].y < 0;
+        CGPoint velocity = [(UIPanGestureRecognizer *)gestureRecognizer velocityInView:self];
+        return velocity.y < 0 && fabs(velocity.y) > fabs(velocity.x);
     }
     return YES;
 }

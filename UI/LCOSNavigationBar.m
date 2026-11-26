@@ -28,7 +28,7 @@
 - (void)layoutSubviews {
     [super layoutSubviews];
     CGFloat width = 5.0;
-    CGFloat height = MIN(134.0, self.bounds.size.height);
+    CGFloat height = MIN(150.0, self.bounds.size.height);
     self.solidPill.frame = CGRectMake(self.bounds.size.width - width - 6.0,
         (self.bounds.size.height - height) / 2.0, width, height);
 }

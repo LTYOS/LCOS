@@ -11,4 +11,7 @@
 - (void)setTransitionProgress:(CGFloat)progress;
 - (void)restoreTaskGeometry;
 - (void)detachSourceDesktop;
+- (void)prepareForTaskActivation;
+- (void)removeTaskFromCards:(UIView *)task;
+- (void)setSourceScales:(BOOL)scales;
 @end

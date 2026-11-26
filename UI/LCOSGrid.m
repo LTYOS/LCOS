@@ -50,8 +50,7 @@
         self.scrollView.directionalLockEnabled = YES;
         self.scrollView.delegate = self;
         [self addSubview:self.scrollView];
-
-        // Add tap gesture to scrollView to bypass paging interception
+        [[LCOSLogManager sharedManager] forceLog:@"LCOSGrid: scroll view stage"];
         UITapGestureRecognizer *tapGesture = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(gridTapGestureRecognized:)];
         tapGesture.cancelsTouchesInView = NO;
         tapGesture.delaysTouchesBegan = NO;
@@ -64,6 +63,7 @@
         // Icon hit testing happens on a completed tap; paging must not wait
         // for that tap to fail after the finger has already started moving.
         self.scrollView.panGestureRecognizer.delegate = self;
+        [[LCOSLogManager sharedManager] forceLog:@"LCOSGrid: gestures stage"];
 
         self.pageControl = [[UIPageControl alloc] initWithFrame:CGRectZero];
         self.pageControl.hidesForSinglePage = YES;
@@ -72,8 +72,10 @@
         self.pageControl.pageIndicatorTintColor = [UIColor colorWithWhite:1.0 alpha:0.35];
         self.pageControl.preferredIndicatorImage = [UIImage systemImageNamed:@"circle.fill"];
         [self addSubview:self.pageControl];
+        [[LCOSLogManager sharedManager] forceLog:@"LCOSGrid: page control stage"];
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(layoutSettingsChanged) name:LCOSLayoutDidChangeNotification object:nil];
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(launcherGestureChanged:) name:@"LCOSLauncherGestureActive" object:nil];
+        [[LCOSLogManager sharedManager] forceLog:@"LCOSGrid: init COMPLETE"];
     }
     return self;
 }
