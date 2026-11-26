@@ -141,6 +141,7 @@ static BOOL LCOSIsLiveContainerHost(void) {
 
 // Class extension for private properties
 @interface LCOSCore ()
+- (void)finishHidingLauncher;
 @property (nonatomic, strong) UILongPressGestureRecognizer *overlayLongPressGesture;
 @property (nonatomic, strong) UILongPressGestureRecognizer *launcherLongPressGesture;
 @property (nonatomic, strong) UILongPressGestureRecognizer *nativeDockGesture;
@@ -166,6 +167,7 @@ static BOOL LCOSIsLiveContainerHost(void) {
 @property (nonatomic, strong) NSMutableDictionary<NSValue *, NSDictionary *> *taskTransitionStates;
 @property (nonatomic, assign) CGFloat lastEdgeTravel;
 @property (nonatomic, assign) BOOL nativeTransition;
+@property (nonatomic, assign) BOOL nativeSourceOnly;
 @property (nonatomic, strong) UIView *taskStage;
 @property (nonatomic, assign) BOOL returnToLCOSDesktop;
 @property (nonatomic, assign) BOOL launcherPreloading;
