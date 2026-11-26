@@ -52,6 +52,7 @@
     self.grid.onAppTapped = ^(LCOSAppModel *appModel) {
         [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Launcher: app tapped - %@", appModel.displayName]];
         [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"LCOSLauncherVisible"];
+        [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"LCOSLaunchFromDesktop"];
         [appModel launch];
     };    [self.view addSubview:self.grid];
     

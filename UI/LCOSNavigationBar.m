@@ -1,7 +1,7 @@
 #import "LCOSNavigationBar.h"
 
 @interface LCOSNavigationBar ()
-@property (nonatomic, strong) UIVisualEffectView *glassView;
+@property (nonatomic, strong) UIView *solidPill;
 @end
 
 @implementation LCOSNavigationBar
@@ -12,30 +12,13 @@
         self.backgroundColor = UIColor.clearColor;
         self.clipsToBounds = NO;
         self.accessibilityLabel = @"导航条";
-        self.accessibilityHint = @"沿边缘滑动以打开后台或返回桌面";
-        if (@available(iOS 26.0, *)) {
-            self.glassView = [[UIVisualEffectView alloc] initWithEffect:[[UIGlassEffect alloc] init]];
-        } else {
-            self.glassView = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterial]];
-        }
-        self.glassView.userInteractionEnabled = NO;
-        self.glassView.layer.cornerRadius = 3.0;
-        self.glassView.layer.cornerCurve = kCACornerCurveContinuous;
-        self.glassView.layer.borderWidth = 0.0;
-        self.glassView.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.42].CGColor;
-        self.glassView.clipsToBounds = YES;
-        if (@available(iOS 26.0, *)) {
-            self.glassView.backgroundColor = [UIColor colorWithWhite:1 alpha:0.68];
-        } else {
-            self.glassView.backgroundColor = [UIColor colorWithWhite:1 alpha:0.55];
-        }
-        [self addSubview:self.glassView];
-        UIView *highlight = [[UIView alloc] init];
-        highlight.userInteractionEnabled = NO;
-        highlight.backgroundColor = [UIColor colorWithWhite:1 alpha:0.42];
-        highlight.layer.cornerRadius = 0.5;
-        highlight.tag = 21;
-        [self addSubview:highlight];
+        self.accessibilityHint = @"向左滑动返回桌面，停住进入后台";
+        self.solidPill = [[UIView alloc] init];
+        self.solidPill.backgroundColor = UIColor.whiteColor;
+        self.solidPill.userInteractionEnabled = NO;
+        self.solidPill.layer.cornerRadius = 2.5;
+        self.solidPill.layer.cornerCurve = kCACornerCurveContinuous;
+        [self addSubview:self.solidPill];
     }
     return self;
 }
@@ -44,12 +27,8 @@
     [super layoutSubviews];
     CGFloat width = 5.0;
     CGFloat height = MIN(134.0, self.bounds.size.height);
-    CGRect pill = CGRectMake((self.bounds.size.width - width) / 2.0,
-                             (self.bounds.size.height - height) / 2.0, width, height);
-    self.glassView.frame = pill;
-    UIView *highlight = [self viewWithTag:21];
-    highlight.frame = CGRectMake(CGRectGetMidX(pill) - 0.5, CGRectGetMinY(pill) + 5,
-                                 1.0, MAX(0, height - 10));
+    self.solidPill.frame = CGRectMake(self.bounds.size.width - width - 1.0,
+        (self.bounds.size.height - height) / 2.0, width, height);
 }
 
 - (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
