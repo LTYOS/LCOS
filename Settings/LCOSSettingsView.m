@@ -9,11 +9,18 @@
 #import "LCOSLayoutSettingsView.h"
 #import "LCOSLayout.h"
 #import "LCOSCore.h"
+#import "LCOSUpdateManager.h"
 
 static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
 
 @interface LCOSSettingsView () <UIImagePickerControllerDelegate, UINavigationControllerDelegate>
+@property (nonatomic, strong) UIScrollView *scrollView;
+@property (nonatomic, strong) UIView *contentView;
 @property (nonatomic, strong) UILabel *titleLabel;
+@property (nonatomic, strong) UILabel *versionLabel;
+@property (nonatomic, strong) UIButton *updateButton;
+@property (nonatomic, strong) UILabel *updateStatusLabel;
+@property (nonatomic, assign) BOOL updateInProgress;
 @property (nonatomic, strong) UISwitch *autoRestoreSwitch;
 @property (nonatomic, strong) UIImageView *wallpaperPreview;
 @property (nonatomic, strong) UISlider *sheetRadiusSlider;
@@ -25,27 +32,45 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor systemBackgroundColor];
+    self.scrollView = [[UIScrollView alloc] init];
+    self.scrollView.translatesAutoresizingMaskIntoConstraints = NO;
+    self.scrollView.alwaysBounceVertical = YES;
+    [self.view addSubview:self.scrollView];
+    self.contentView = [[UIView alloc] init];
+    self.contentView.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.scrollView addSubview:self.contentView];
+    [NSLayoutConstraint activateConstraints:@[
+        [self.scrollView.topAnchor constraintEqualToAnchor:self.view.topAnchor],
+        [self.scrollView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
+        [self.scrollView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
+        [self.scrollView.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
+        [self.contentView.topAnchor constraintEqualToAnchor:self.scrollView.contentLayoutGuide.topAnchor],
+        [self.contentView.leadingAnchor constraintEqualToAnchor:self.scrollView.contentLayoutGuide.leadingAnchor],
+        [self.contentView.trailingAnchor constraintEqualToAnchor:self.scrollView.contentLayoutGuide.trailingAnchor],
+        [self.contentView.bottomAnchor constraintEqualToAnchor:self.scrollView.contentLayoutGuide.bottomAnchor],
+        [self.contentView.widthAnchor constraintEqualToAnchor:self.scrollView.frameLayoutGuide.widthAnchor],
+    ]];
     
     self.titleLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     self.titleLabel.text = @"LCOS 设置";
     self.titleLabel.textAlignment = NSTextAlignmentCenter;
     self.titleLabel.font = [UIFont boldSystemFontOfSize:24];
     self.titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:self.titleLabel];
+    [self.contentView addSubview:self.titleLabel];
     
     // Close button
     UIButton *closeButton = [UIButton buttonWithType:UIButtonTypeSystem];
     closeButton.translatesAutoresizingMaskIntoConstraints = NO;
     [closeButton setTitle:@"关闭" forState:UIControlStateNormal];
     [closeButton addTarget:self action:@selector(closeTapped:) forControlEvents:UIControlEventTouchUpInside];
-    [self.view addSubview:closeButton];
+    [self.contentView addSubview:closeButton];
     
     // Auto-restore row: label + switch
     UILabel *autoRestoreLabel = [[UILabel alloc] init];
     autoRestoreLabel.text = @"启动时恢复桌面";
     autoRestoreLabel.font = [UIFont systemFontOfSize:17];
     autoRestoreLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:autoRestoreLabel];
+    [self.contentView addSubview:autoRestoreLabel];
     
     self.autoRestoreSwitch = [[UISwitch alloc] init];
     self.autoRestoreSwitch.translatesAutoresizingMaskIntoConstraints = NO;
@@ -53,7 +78,7 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
     BOOL enabled = [defaults objectForKey:kLCOSAutoRestoreKey] == nil ? YES : [defaults boolForKey:kLCOSAutoRestoreKey];
     self.autoRestoreSwitch.on = enabled;
     [self.autoRestoreSwitch addTarget:self action:@selector(autoRestoreChanged:) forControlEvents:UIControlEventValueChanged];
-    [self.view addSubview:self.autoRestoreSwitch];
+    [self.contentView addSubview:self.autoRestoreSwitch];
     
     UILabel *autoRestoreHint = [[UILabel alloc] init];
     autoRestoreHint.text = @"开启后，若上次在桌面退出，下次打开自动进入桌面";
@@ -61,7 +86,7 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
     autoRestoreHint.textColor = [UIColor secondaryLabelColor];
     autoRestoreHint.numberOfLines = 0;
     autoRestoreHint.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:autoRestoreHint];
+    [self.contentView addSubview:autoRestoreHint];
     
     UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
     [NSLayoutConstraint activateConstraints:@[
@@ -88,7 +113,7 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
     wallpaperLabel.text = @"桌面壁纸";
     wallpaperLabel.font = [UIFont systemFontOfSize:17];
     wallpaperLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:wallpaperLabel];
+    [self.contentView addSubview:wallpaperLabel];
     
     self.wallpaperPreview = [[UIImageView alloc] init];
     self.wallpaperPreview.contentMode = UIViewContentModeScaleAspectFill;
@@ -96,7 +121,7 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
     self.wallpaperPreview.layer.cornerRadius = 12;
     self.wallpaperPreview.backgroundColor = [UIColor tertiarySystemFillColor];
     self.wallpaperPreview.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:self.wallpaperPreview];
+    [self.contentView addSubview:self.wallpaperPreview];
     self.wallpaperPreview.image = [[LCOSWallpaper shared] currentWallpaper];
     
     UIButton *chooseBtn = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -104,7 +129,7 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
     chooseBtn.titleLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightMedium];
     [chooseBtn addTarget:self action:@selector(chooseWallpaper) forControlEvents:UIControlEventTouchUpInside];
     chooseBtn.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:chooseBtn];
+    [self.contentView addSubview:chooseBtn];
     
     UIButton *clearBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     [clearBtn setTitle:@"恢复默认" forState:UIControlStateNormal];
@@ -112,7 +137,7 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
     clearBtn.titleLabel.font = [UIFont systemFontOfSize:16];
     [clearBtn addTarget:self action:@selector(clearWallpaper) forControlEvents:UIControlEventTouchUpInside];
     clearBtn.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:clearBtn];
+    [self.contentView addSubview:clearBtn];
     
     [NSLayoutConstraint activateConstraints:@[
         [wallpaperLabel.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:24],
@@ -134,7 +159,7 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
     developerLabel.text = @"开发者功能";
     developerLabel.font = [UIFont boldSystemFontOfSize:17];
     developerLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:developerLabel];
+    [self.contentView addSubview:developerLabel];
 
     UIButton *layoutButton = [UIButton buttonWithType:UIButtonTypeSystem];
     layoutButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
@@ -142,7 +167,7 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
     layoutButton.titleLabel.font = [UIFont systemFontOfSize:17];
     [layoutButton addTarget:self action:@selector(openLayoutSettings) forControlEvents:UIControlEventTouchUpInside];
     layoutButton.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:layoutButton];
+    [self.contentView addSubview:layoutButton];
     [NSLayoutConstraint activateConstraints:@[
         [developerLabel.leadingAnchor constraintEqualToAnchor:wallpaperLabel.leadingAnchor],
         [developerLabel.topAnchor constraintEqualToAnchor:self.wallpaperPreview.bottomAnchor constant:28],
@@ -157,19 +182,19 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
     radiusLabel.text = @"桌面滑动顶部弧度";
     radiusLabel.font = [UIFont systemFontOfSize:15];
     radiusLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:radiusLabel];
+    [self.contentView addSubview:radiusLabel];
     self.sheetRadiusValueLabel = [[UILabel alloc] init];
     self.sheetRadiusValueLabel.textAlignment = NSTextAlignmentRight;
     self.sheetRadiusValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:14 weight:UIFontWeightRegular];
     self.sheetRadiusValueLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:self.sheetRadiusValueLabel];
+    [self.contentView addSubview:self.sheetRadiusValueLabel];
     self.sheetRadiusSlider = [[UISlider alloc] init];
     self.sheetRadiusSlider.minimumValue = 0;
     self.sheetRadiusSlider.maximumValue = 60;
     self.sheetRadiusSlider.value = [LCOSLayout value:@"sheetRadius"];
     self.sheetRadiusSlider.translatesAutoresizingMaskIntoConstraints = NO;
     [self.sheetRadiusSlider addTarget:self action:@selector(sheetRadiusChanged:) forControlEvents:UIControlEventValueChanged];
-    [self.view addSubview:self.sheetRadiusSlider];
+    [self.contentView addSubview:self.sheetRadiusSlider];
     [self updateSheetRadiusLabel];
     [NSLayoutConstraint activateConstraints:@[
         [radiusLabel.leadingAnchor constraintEqualToAnchor:layoutButton.leadingAnchor],
@@ -182,7 +207,108 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
         [self.sheetRadiusSlider.heightAnchor constraintEqualToConstant:36],
     ]];
 
+    UILabel *updateHeading = [[UILabel alloc] init];
+    updateHeading.text = @"插件更新";
+    updateHeading.font = [UIFont boldSystemFontOfSize:17];
+    updateHeading.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.contentView addSubview:updateHeading];
+    self.versionLabel = [[UILabel alloc] init];
+    self.versionLabel.text = [NSString stringWithFormat:@"当前版本：%@", LCOSUpdateManager.shared.currentVersion];
+    self.versionLabel.font = [UIFont systemFontOfSize:15];
+    self.versionLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.contentView addSubview:self.versionLabel];
+    self.updateButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.updateButton setTitle:@"检查更新" forState:UIControlStateNormal];
+    self.updateButton.backgroundColor = UIColor.systemBlueColor;
+    [self.updateButton setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
+    self.updateButton.layer.cornerRadius = 12;
+    self.updateButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.updateButton addTarget:self action:@selector(checkForUpdates) forControlEvents:UIControlEventTouchUpInside];
+    [self.contentView addSubview:self.updateButton];
+    self.updateStatusLabel = [[UILabel alloc] init];
+    self.updateStatusLabel.font = [UIFont systemFontOfSize:13];
+    self.updateStatusLabel.textColor = UIColor.secondaryLabelColor;
+    self.updateStatusLabel.numberOfLines = 0;
+    self.updateStatusLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.contentView addSubview:self.updateStatusLabel];
+    [NSLayoutConstraint activateConstraints:@[
+        [updateHeading.leadingAnchor constraintEqualToAnchor:radiusLabel.leadingAnchor],
+        [updateHeading.topAnchor constraintEqualToAnchor:self.sheetRadiusSlider.bottomAnchor constant:30],
+        [self.versionLabel.leadingAnchor constraintEqualToAnchor:updateHeading.leadingAnchor],
+        [self.versionLabel.topAnchor constraintEqualToAnchor:updateHeading.bottomAnchor constant:12],
+        [self.updateButton.leadingAnchor constraintEqualToAnchor:updateHeading.leadingAnchor],
+        [self.updateButton.trailingAnchor constraintEqualToAnchor:self.sheetRadiusSlider.trailingAnchor],
+        [self.updateButton.topAnchor constraintEqualToAnchor:self.versionLabel.bottomAnchor constant:16],
+        [self.updateButton.heightAnchor constraintEqualToConstant:46],
+        [self.updateStatusLabel.leadingAnchor constraintEqualToAnchor:updateHeading.leadingAnchor],
+        [self.updateStatusLabel.trailingAnchor constraintEqualToAnchor:self.sheetRadiusSlider.trailingAnchor],
+        [self.updateStatusLabel.topAnchor constraintEqualToAnchor:self.updateButton.bottomAnchor constant:12],
+        [self.updateStatusLabel.bottomAnchor constraintEqualToAnchor:self.contentView.bottomAnchor constant:-32],
+    ]];
     [[LCOSLogManager sharedManager] forceLog:@"LCOS Settings viewDidLoad"];
+}
+
+- (void)checkForUpdates {
+    if (self.updateInProgress) return;
+    self.updateInProgress = YES;
+    self.updateButton.enabled = NO;
+    self.updateStatusLabel.text = @"正在检查 GitHub 最新发行版…";
+    [LCOSUpdateManager.shared checkForUpdatesWithCompletion:^(NSDictionary *release, NSError *error) {
+        self.updateInProgress = NO;
+        self.updateButton.enabled = YES;
+        if (error) { self.updateStatusLabel.text = error.localizedDescription; return; }
+        if (!release) {
+            self.updateStatusLabel.text = @"当前已是最新版本，或你已忽略该版本。";
+            NSString *ignored = [NSUserDefaults.standardUserDefaults stringForKey:@"LCOSIgnoredReleaseVersion"];
+            if (ignored.length) {
+                [self presentAlert:@"已忽略更新" message:[NSString stringWithFormat:@"版本 %@ 已被忽略。\n点击“恢复检查”后，下次会重新提示该版本。", ignored] actionTitle:@"恢复检查" handler:^{
+                    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"LCOSIgnoredReleaseVersion"];
+                }];
+            }
+            return;
+        }
+        NSString *message = [NSString stringWithFormat:@"当前：%@\n新版：%@\n\n%@",
+            LCOSUpdateManager.shared.currentVersion, release[@"version"], release[@"body"]];
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"发现新版本" message:message preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"立即下载" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            [self downloadRelease:release];
+        }]];
+        [alert addAction:[UIAlertAction actionWithTitle:@"忽略此版本" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) {
+            [LCOSUpdateManager.shared ignoreRelease:release];
+            self.updateStatusLabel.text = [NSString stringWithFormat:@"已忽略版本 %@", release[@"version"]];
+        }]];
+        [self presentViewController:alert animated:YES completion:nil];
+    }];
+}
+
+- (void)downloadRelease:(NSDictionary *)release {
+    self.updateInProgress = YES;
+    self.updateButton.enabled = NO;
+    self.updateStatusLabel.text = @"正在下载、校验并签名模块…";
+    [LCOSUpdateManager.shared downloadAndInstallRelease:release completion:^(NSError *error) {
+        self.updateInProgress = NO;
+        self.updateButton.enabled = YES;
+        if (error) {
+            self.updateStatusLabel.text = error.localizedDescription;
+            [self presentAlert:@"更新未完成" message:error.localizedDescription];
+            return;
+        }
+        self.updateStatusLabel.text = @"下载成功，已覆盖模块。请在 LiveContainer 模块页确认签名后重启。";
+        [self presentAlert:@"下载成功" message:@"已覆盖 LCOS.dylib，并保留旧版备份。\n已调用 LiveContainer 签名接口，请签名后重启 LiveContainer。\n点击完成后返回设置。"];
+    }];
+}
+
+- (void)presentAlert:(NSString *)title message:(NSString *)message {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"完成" style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)presentAlert:(NSString *)title message:(NSString *)message actionTitle:(NSString *)actionTitle handler:(dispatch_block_t)handler {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:actionTitle style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) { if (handler) handler(); }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"完成" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)updateSheetRadiusLabel {
@@ -245,18 +371,18 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
 }
 
 - (void)closeTapped:(UIButton *)sender {
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS Settings close tapped")];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Settings close tapped"];
     [self dismissViewControllerAnimated:YES completion:nil];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS Settings viewDidAppear")];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Settings viewDidAppear"];
 }
 
 - (void)viewWillDisappear:(BOOL)animated {
     [super viewWillDisappear:animated];
-    [[LCOSLogManager sharedManager] forceLog:@("LCOS Settings viewWillDisappear")];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Settings viewWillDisappear"];
 }
 
 @end
