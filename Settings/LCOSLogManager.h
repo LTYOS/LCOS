@@ -12,6 +12,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)forceLog:(NSString *)message; // Instance method (called on sharedManager)
 + (void)clearLogs;
 + (NSData *)exportLogsAsJSON;
+/// The host Tweaks directory adjacent to the LCOS log directory, when available.
+- (nullable NSString *)siblingTweaksDirectory;
 
 @end
 
