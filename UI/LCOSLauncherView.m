@@ -37,7 +37,8 @@
     
     [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: viewDidLoad START"];
     
-    // Wallpaper layer (bottom-most)
+    // Stage logs identify the exact failing stage if a host API changes.
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: wallpaper stage"];
     self.wallpaperView = [[UIImageView alloc] initWithFrame:self.view.bounds];
     self.wallpaperView.contentMode = UIViewContentModeScaleAspectFill;
     self.wallpaperView.clipsToBounds = YES;
@@ -46,7 +47,7 @@
     [self reloadWallpaper];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(reloadWallpaper) name:@"LCOSWallpaperDidChange" object:nil];
     
-    // Setup grid (above wallpaper) - load installed apps from LiveContainer
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: grid allocation stage"];
     self.grid = [[LCOSGrid alloc] initWithFrame:self.view.bounds];
     self.grid.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     self.grid.onAppTapped = ^(LCOSAppModel *appModel) {
@@ -56,11 +57,12 @@
         [appModel launch];
     };    [self.view addSubview:self.grid];
     
-    // Load installed apps into grid
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: app enumeration stage"];
     NSArray<LCOSAppModel *> *installedApps = [LCOSAppModel allInstalledApps];
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Launcher: grid population stage, apps=%lu", (unsigned long)installedApps.count]];
     [self.grid setApps:installedApps];
-    
-    // Setup dock (floating capsule with side/bottom insets)
+
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: dock allocation stage"];
     self.dock = [[LCOSDock alloc] initWithFrame:CGRectZero];
     [self.view addSubview:self.dock];
     
