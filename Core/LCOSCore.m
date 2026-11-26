@@ -26,6 +26,7 @@
 
 @interface LCOSNavigationTouchZone : UIControl
 @property (nonatomic, copy) void (^onPan)(UIPanGestureRecognizer *gesture);
+@property (nonatomic, copy) void (^onTap)(void);
 @end
 @implementation LCOSNavigationTouchZone
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -33,10 +34,15 @@
     if (self) {
         UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
         [self addGestureRecognizer:pan];
+        UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTap:)];
+        [self addGestureRecognizer:tap];
     }
     return self;
 }
 - (void)handlePan:(UIPanGestureRecognizer *)gesture { if (self.onPan) self.onPan(gesture); }
+- (void)handleTap:(UITapGestureRecognizer *)gesture {
+    if (gesture.state == UIGestureRecognizerStateEnded && self.onTap) self.onTap();
+}
 @end
 
 @implementation LCOSPassThroughWindow
@@ -136,8 +142,18 @@ static BOOL LCOSIsLiveContainerHost(void) {
 @property (nonatomic, strong) NSTimer *edgeDwellTimer;
 @property (nonatomic, assign) CGFloat edgeStartX;
 @property (nonatomic, assign) BOOL isGuestNavigation;
-@property (nonatomic, strong) UIView *guestPageSnapshot;
-@property (nonatomic, strong) UIVisualEffectView *guestBlurView;
+@property (nonatomic, strong) UIView *sourceDesktopView;
+@property (nonatomic, strong) UIView *appTransitionSnapshot;
+@property (nonatomic, weak) UIView *activeTaskView;
+@property (nonatomic, assign) BOOL sourceWasHidden;
+@property (nonatomic, assign) CGFloat sourceOriginalAlpha;
+@property (nonatomic, assign) BOOL sourceInteractionEnabled;
+@property (nonatomic, weak) UIView *sourceOriginalSuperview;
+@property (nonatomic, assign) NSUInteger sourceOriginalIndex;
+@property (nonatomic, assign) CGRect sourceOriginalFrame;
+@property (nonatomic, assign) CGAffineTransform sourceOriginalTransform;
+@property (nonatomic, strong) NSArray<UIView *> *liveTaskViews;
+@property (nonatomic, strong) NSMutableDictionary<NSValue *, NSDictionary *> *taskTransitionStates;
 @property (nonatomic, assign) CGFloat lastEdgeTravel;
 @end
 
@@ -146,24 +162,78 @@ static BOOL LCOSIsLiveContainerHost(void) {
 static BOOL LCOSAutoRestoreEnabled(void);
 static void (*orig_makeKeyAndVisible)(id self, SEL _cmd);
 static void lcos_makeKeyAndVisible(id self, SEL _cmd) {
-    // Restore desktop BEFORE the native window becomes visible.
     if ([NSThread isMainThread]) {
         UIWindow *window = (UIWindow *)self;
-        if (![window isKindOfClass:[LCOSPassThroughWindow class]] &&
-            LCOSAutoRestoreEnabled() &&
-            [[NSUserDefaults standardUserDefaults] boolForKey:@"LCOSLauncherVisible"]) {
+        if (![window isKindOfClass:[LCOSPassThroughWindow class]]) {
             LCOSCore *core = [LCOSCore sharedInstance];
-            if (!core.overlayWindow) {
-                [[LCOSLogManager sharedManager] forceLog:@"LCOS: makeKeyAndVisible -> initialize early"];
-                [core initialize];
-            }
-            if (!core.isLauncherVisible) {
-                [[LCOSLogManager sharedManager] forceLog:@"LCOS: makeKeyAndVisible -> restore launcher before native shows"];
+            if (!core.overlayWindow) [core initialize];
+            if (LCOSAutoRestoreEnabled() && [[NSUserDefaults standardUserDefaults] boolForKey:@"LCOSLauncherVisible"] && !core.isLauncherVisible) {
                 [core showLauncherImmediately];
             }
         }
     }
     if (orig_makeKeyAndVisible) orig_makeKeyAndVisible(self, _cmd);
+}
+
+static NSMutableArray<NSValue *> *LCOSTaskWindows(void) {
+    static NSMutableArray *tasks;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ tasks = [NSMutableArray array]; });
+    return tasks;
+}
+
+static void (*orig_addRunningApp)(id, SEL, NSString *, NSString *, UIView *);
+static void lcos_addRunningApp(id self, SEL _cmd, NSString *name, NSString *uuid, UIView *view) {
+    if (orig_addRunningApp) orig_addRunningApp(self, _cmd, name, uuid, view);
+    if (!view) return;
+    for (NSValue *entry in [LCOSTaskWindows() copy]) if (!entry.nonretainedObjectValue) [LCOSTaskWindows() removeObject:entry];
+    for (NSValue *entry in LCOSTaskWindows()) if (entry.nonretainedObjectValue == view) return;
+    [LCOSTaskWindows() addObject:[NSValue valueWithNonretainedObject:view]];
+}
+
+static void (*orig_removeRunningApp)(id, SEL, NSString *);
+static void lcos_removeRunningApp(id self, SEL _cmd, NSString *uuid) {
+    if (orig_removeRunningApp) orig_removeRunningApp(self, _cmd, uuid);
+}
+
+static void LCOSInstallTaskHooks(void) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        Class dock = NSClassFromString(@"MultitaskDockManager");
+        Method add = class_getInstanceMethod(dock, @selector(addRunningApp:appUUID:view:));
+        if (add) {
+            orig_addRunningApp = (void *)method_getImplementation(add);
+            method_setImplementation(add, (IMP)lcos_addRunningApp);
+        }
+        Method remove = class_getInstanceMethod(dock, @selector(removeRunningApp:));
+        if (remove) {
+            orig_removeRunningApp = (void *)method_getImplementation(remove);
+            method_setImplementation(remove, (IMP)lcos_removeRunningApp);
+        }
+        id manager = ((id (*)(id, SEL))objc_msgSend)(dock, NSSelectorFromString(@"shared"));
+        id apps = [manager valueForKey:@"apps"];
+        if ([apps isKindOfClass:NSArray.class]) for (id app in apps) {
+            UIView *view = [app valueForKey:@"view"];
+            if ([view isKindOfClass:UIView.class]) lcos_addRunningApp(nil, nil, nil, nil, view);
+        }
+    });
+}
+
+static void LCOSRecordLaunchSource(id self, SEL _cmd, BOOL fromLCOS) {
+    SEL groupSelector = NSSelectorFromString(@"appGroupPath");
+    if (![self respondsToSelector:groupSelector]) return;
+    NSURL *group = ((id (*)(id, SEL))objc_msgSend)(self, groupSelector);
+    NSString *path = [group.path stringByAppendingPathComponent:@"LiveContainer/LCOSLaunchSource.plist"];
+    [NSFileManager.defaultManager createDirectoryAtPath:path.stringByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:nil];
+    [@{@"source": fromLCOS ? @"lcos" : @"native"} writeToFile:path atomically:YES];
+}
+
+static void LCOSInstallLaunchSourceHook(void) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        Class utils = NSClassFromString(@"LCSharedUtils");
+        class_addMethod(utils, NSSelectorFromString(@"lcosRecordLaunchSource:"), (IMP)LCOSRecordLaunchSource, "v@:B");
+    });
 }
 
 @implementation LCOSCore
@@ -267,6 +337,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         }
     }
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: initialize START"];
+    if (!self.isGuestNavigation) { LCOSInstallTaskHooks(); LCOSInstallLaunchSourceHook(); }
     
     // Check if window scene is ready
     if (![self hasValidWindowScene]) {
@@ -526,18 +597,30 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 }
 
 - (void)updateInteractionState {
-    // Disabling a long-press while it tracks the Dock cancels the active
-    // transition immediately. Keep it alive until the gesture ends.
     self.nativeDockGesture.enabled = self.dockTransitionActive || (!self.isLauncherVisible && !self.isBackgroundVisible);
     self.launcherDismissGesture.enabled = self.isLauncherVisible && !self.dockTransitionActive && !self.isBackgroundVisible;
-    self.rightEdgeZone.hidden = NO;
-    self.navigationBar.hidden = NO;
-    self.overlayWindow.hidden = NO;
-    if (self.isBackgroundVisible) {
-        [self.overlayWindow.rootViewController.view bringSubviewToFront:self.backgroundView];
-        [self.overlayWindow.rootViewController.view bringSubviewToFront:self.rightEdgeZone];
-        [self.overlayWindow.rootViewController.view bringSubviewToFront:self.navigationBar];
+    BOOL navigationAllowed = !self.isLauncherVisible && !self.isBackgroundVisible;
+    self.rightEdgeZone.hidden = !navigationAllowed;
+    self.navigationBar.hidden = !navigationAllowed;
+    if (!navigationAllowed) {
+        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(fadeNavigationBar) object:nil];
+        self.navigationBar.alpha = 0;
+        self.navigationBar.transform = CGAffineTransformIdentity;
     }
+    self.overlayWindow.hidden = NO;
+}
+
+- (void)showNavigationTapFeedback {
+    if (self.isLauncherVisible || self.isBackgroundVisible || self.edgeTransitionActive) return;
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(fadeNavigationBar) object:nil];
+    self.navigationBar.hidden = NO;
+    self.navigationBar.transform = CGAffineTransformIdentity;
+    self.navigationBar.alpha = 0.85;
+    [UIView animateWithDuration:0.14 animations:^{ self.navigationBar.transform = CGAffineTransformMakeTranslation(-7, 0); }
+        completion:^(BOOL finished) { [UIView animateWithDuration:0.24 delay:0 usingSpringWithDamping:0.55 initialSpringVelocity:0 options:0 animations:^{
+            self.navigationBar.transform = CGAffineTransformIdentity;
+        } completion:nil]; }];
+    [self performSelector:@selector(fadeNavigationBar) withObject:nil afterDelay:1.5];
 }
 
 - (void)setupNavigationAndBackground {
@@ -546,7 +629,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     CGFloat zoneWidth = MAX(32.0, root.bounds.size.width * 0.07);
     CGFloat barWidth = 23.0;
     CGFloat barHeight = 134.0;
-    self.navigationBar = [[LCOSNavigationBar alloc] initWithFrame:CGRectMake(root.bounds.size.width - 9.0 - barWidth,
+    self.navigationBar = [[LCOSNavigationBar alloc] initWithFrame:CGRectMake(root.bounds.size.width - 2.0 - barWidth,
         (root.bounds.size.height - barHeight) / 2.0, barWidth, barHeight)];
     self.navigationBar.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
     self.navigationBar.alpha = 0.0;
@@ -558,6 +641,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     self.rightEdgeZone.backgroundColor = UIColor.clearColor;
     __weak typeof(self) weakSelf = self;
     self.rightEdgeZone.onPan = ^(UIPanGestureRecognizer *gesture) { [weakSelf handleRightEdgeGesture:gesture]; };
+    self.rightEdgeZone.onTap = ^{ [weakSelf showNavigationTapFeedback]; };
     [root addSubview:self.rightEdgeZone];
     if ([self.overlayWindow isKindOfClass:LCOSPassThroughWindow.class]) {
         ((LCOSPassThroughWindow *)self.overlayWindow).navigationTouchZone = self.rightEdgeZone;
@@ -576,11 +660,12 @@ static BOOL LCOSAutoRestoreEnabled(void) {
             return;
         }
         [self cancelEdgeDwell];
-        [self cancelGuestReturn];
         self.edgeTransitionActive = YES;
         self.edgeDwellReached = NO;
         self.edgeLaunchingBackground = NO;
         self.edgeStartX = point.x;
+        self.lastEdgeTravel = 0;
+        [self prepareAppReturnTransition];
         [self.overlayWindow.rootViewController.view bringSubviewToFront:self.rightEdgeZone];
         [self.overlayWindow.rootViewController.view bringSubviewToFront:self.navigationBar];
         [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSLauncherGestureActive" object:@YES];
@@ -593,9 +678,8 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Navigation: began guest=%d background=%d", self.isGuestNavigation, self.isBackgroundVisible]];
     } else if (self.edgeTransitionActive && gesture.state == UIGestureRecognizerStateChanged) {
         if (self.edgeLaunchingBackground) return;
-        CGFloat travel = point.x - self.edgeStartX;
-        if (self.isBackgroundVisible) travel = ABS(travel);
-        self.lastEdgeTravel = travel;
+        CGFloat travel = self.edgeStartX - point.x;
+        self.lastEdgeTravel = MAX(0, travel);
         if (self.edgeDwellReached) {
             [self.backgroundView setTransitionProgress:MIN(1.0, MAX(0, travel / 80.0))];
         } else if (self.isBackgroundVisible) {
@@ -610,66 +694,165 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         self.edgeDwellReached = NO;
         [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSLauncherGestureActive" object:@NO];
         CGFloat velocityX = [gesture velocityInView:self.overlayWindow].x;
-        BOOL returnsHome = gesture.state == UIGestureRecognizerStateEnded &&
-            (self.isBackgroundVisible ? (self.lastEdgeTravel > 16.0 || ABS(velocityX) > 120.0) :
-            (!self.edgeLaunchingBackground && !dwell &&
-            ((self.lastEdgeTravel > 16.0 && velocityX > 120.0) || self.lastEdgeTravel > 32.0)));
+        BOOL returnsHome = gesture.state == UIGestureRecognizerStateEnded && !self.edgeLaunchingBackground && !dwell &&
+            ((self.lastEdgeTravel > 24.0 && velocityX < -120.0) || self.lastEdgeTravel > 64.0);
         [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Navigation: end travel=%.1f dwell=%d returnsHome=%d", self.lastEdgeTravel, dwell, returnsHome]];
+        if (self.isBackgroundVisible) {
+            self.edgeTransitionActive = NO;
+            self.edgeLaunchingBackground = NO;
+            self.navigationBar.alpha = 0;
+            self.navigationBar.transform = CGAffineTransformIdentity;
+            return;
+        }
         [self finishEdgeTransitionReturningHome:returnsHome cancelled:gesture.state != UIGestureRecognizerStateEnded];
         self.edgeLaunchingBackground = NO;
     }
 }
 
 - (void)updateEdgeInteractivePosition:(CGFloat)travel {
-    if (self.isBackgroundVisible) {
-        [self.backgroundView setTransitionProgress:1.0 - MIN(1.0, MAX(0, travel / 180.0))];
-    } else if (self.isLauncherVisible) {
-        CGFloat width = self.launcherContainer.view.bounds.size.width;
-        self.launcherContainer.view.transform = CGAffineTransformMakeTranslation(MAX(0, travel), 0);
-        self.navigationBar.transform = CGAffineTransformMakeTranslation(MAX(0, travel) - width, 0);
+    CGFloat progress = MIN(1, MAX(0, travel / MAX(80, self.overlayWindow.bounds.size.width * 0.42)));
+    [self updateLiveTaskReturnProgress:progress];
+    if (self.appTransitionSnapshot) {
+        CGFloat scale = 1.0 - 0.22 * progress;
+        self.appTransitionSnapshot.transform = CGAffineTransformMakeScale(scale, scale);
+        self.appTransitionSnapshot.layer.cornerRadius = 20 * progress;
+        self.appTransitionSnapshot.layer.masksToBounds = YES;
+        self.navigationBar.transform = CGAffineTransformMakeTranslation(-36 * progress, 0);
     } else {
-        self.navigationBar.transform = CGAffineTransformMakeTranslation(-MIN(40, MAX(0, travel)), 0);
+        self.navigationBar.transform = CGAffineTransformMakeTranslation(-MIN(40, travel), 0);
     }
 }
 
-- (void)finishEdgeTransitionReturningHome:(BOOL)returningHome cancelled:(BOOL)cancelled {
+- (void)prepareAppReturnTransition {
+    if (self.appTransitionSnapshot || self.isBackgroundVisible || self.isLauncherVisible) return;
+    UIView *root = self.overlayWindow.rootViewController.view;
+    self.sourceDesktopView = [self sourceDesktop];
+    self.sourceWasHidden = self.sourceDesktopView.hidden;
+    self.sourceOriginalAlpha = self.sourceDesktopView.alpha;
+    self.sourceInteractionEnabled = self.sourceDesktopView.userInteractionEnabled;
+    self.sourceOriginalSuperview = self.sourceDesktopView.superview;
+    self.sourceOriginalIndex = self.sourceOriginalSuperview ? [self.sourceOriginalSuperview.subviews indexOfObject:self.sourceDesktopView] : 0;
+    self.sourceOriginalFrame = self.sourceDesktopView.frame;
+    self.sourceOriginalTransform = self.sourceDesktopView.transform;
+    self.sourceDesktopView.hidden = NO;
+    self.sourceDesktopView.alpha = 1;
+    self.sourceDesktopView.userInteractionEnabled = NO;
+    if (!self.sourceDesktopView.superview) [root insertSubview:self.sourceDesktopView atIndex:0];
+    self.navigationBar.hidden = YES;
+    self.rightEdgeZone.hidden = YES;
+    if (self.activeTaskView) {
+        [self bringLiveTasksAboveSource];
+    } else {
+        UIView *snapshot = [self.overlayWindow snapshotViewAfterScreenUpdates:NO];
+        if (snapshot) {
+            snapshot.frame = root.bounds;
+            self.appTransitionSnapshot = snapshot;
+            [root addSubview:snapshot];
+        }
+    }
+    self.navigationBar.hidden = NO;
+    self.rightEdgeZone.hidden = NO;
+    [root bringSubviewToFront:self.rightEdgeZone];
+    [root bringSubviewToFront:self.navigationBar];
+}
+
+- (void)bringLiveTasksAboveSource {
+    for (UIView *task in [self runningTaskViews]) {
+        if (self.taskTransitionStates[[NSValue valueWithNonretainedObject:task]]) continue;
+        NSDictionary *state = @{@"transform": [NSValue valueWithCGAffineTransform:task.transform],
+            @"center": [NSValue valueWithCGPoint:task.center], @"alpha": @(task.alpha),
+            @"hidden": @(task.hidden), @"interaction": @(task.userInteractionEnabled)};
+        if (!self.taskTransitionStates) self.taskTransitionStates = [NSMutableDictionary dictionary];
+        self.taskTransitionStates[[NSValue valueWithNonretainedObject:task]] = state;
+        task.hidden = NO;
+        task.alpha = 1;
+        task.userInteractionEnabled = NO;
+        [task.superview bringSubviewToFront:task];
+    }
+}
+
+- (void)updateLiveTaskReturnProgress:(CGFloat)progress {
+    for (NSValue *key in self.taskTransitionStates) {
+        UIView *task = key.nonretainedObjectValue;
+        NSDictionary *state = self.taskTransitionStates[key];
+        CGAffineTransform base = [state[@"transform"] CGAffineTransformValue];
+        CGFloat scale = 1.0 - 0.22 * progress;
+        task.transform = CGAffineTransformScale(base, scale, scale);
+        task.layer.cornerRadius = 20 * progress;
+        task.layer.masksToBounds = YES;
+    }
+}
+
+- (void)restoreLiveTaskTransitionStates {
+    for (NSValue *key in self.taskTransitionStates) {
+        UIView *task = key.nonretainedObjectValue;
+        NSDictionary *state = self.taskTransitionStates[key];
+        task.transform = [state[@"transform"] CGAffineTransformValue];
+        task.center = [state[@"center"] CGPointValue];
+        task.alpha = [state[@"alpha"] doubleValue];
+        task.hidden = [state[@"hidden"] boolValue];
+        task.userInteractionEnabled = [state[@"interaction"] boolValue];
+        task.layer.cornerRadius = 0;
+    }
+    [self.taskTransitionStates removeAllObjects];
+}
+
+- (void)restoreSourceDesktop {
+    self.sourceDesktopView.hidden = self.sourceWasHidden;
+    self.sourceDesktopView.alpha = self.sourceOriginalAlpha;
+    self.sourceDesktopView.userInteractionEnabled = self.sourceInteractionEnabled;
+    self.sourceDesktopView.transform = self.sourceOriginalTransform;
+    self.sourceDesktopView.frame = self.sourceOriginalFrame;
+    if (self.sourceOriginalSuperview && self.sourceDesktopView.superview != self.sourceOriginalSuperview) {
+        [self.sourceOriginalSuperview insertSubview:self.sourceDesktopView atIndex:MIN(self.sourceOriginalIndex, self.sourceOriginalSuperview.subviews.count)];
+    }
+    [self.sourceDesktopView removeFromSuperview];
+}
+
+- (void)returnToSourceDesktop {
+    [self.appTransitionSnapshot removeFromSuperview];
+    self.appTransitionSnapshot = nil;
     if (self.isGuestNavigation) {
-        if (returningHome) [self returnToLiveContainer];
-        else [self cancelGuestReturn];
-        self.edgeTransitionActive = NO;
+        [self returnToLiveContainer];
         return;
     }
-    if (self.isBackgroundVisible) {
-        [UIView animateWithDuration:0.32 delay:0 usingSpringWithDamping:0.84 initialSpringVelocity:0 options:0 animations:^{
-            [self.backgroundView setTransitionProgress:returningHome ? 0.0 : 1.0];
-            self.navigationBar.transform = CGAffineTransformIdentity;
-            self.navigationBar.alpha = returningHome ? 0.65 : 0.0;
-        } completion:^(BOOL finished) {
-            self.edgeTransitionActive = NO;
-            if (returningHome) [self hideBackground];
-            [self performSelector:@selector(fadeNavigationBar) withObject:nil afterDelay:1.8];
-        }];
-        return;
+    if (self.taskTransitionStates.count) [self restoreLiveTaskTransitionStates];
+    else if (self.activeTaskView) [self.backgroundView restoreTaskGeometry];
+    if (self.activeTaskView) [self bringLiveTasksAboveSource];
+    [self restoreSourceDesktop];
+    if (self.activeTaskView) {
+        self.activeTaskView.hidden = YES;
+        self.activeTaskView.alpha = 0;
+        self.activeTaskView.userInteractionEnabled = NO;
+        self.activeTaskView = nil;
     }
-    if (self.isLauncherVisible && returningHome) {
-        self.launcherTransitionActive = YES;
-        [UIView animateWithDuration:0.28 delay:0 usingSpringWithDamping:0.86 initialSpringVelocity:0 options:0 animations:^{
-            self.launcherContainer.view.transform = CGAffineTransformMakeTranslation(self.launcherContainer.view.bounds.size.width, 0);
-            self.navigationBar.transform = CGAffineTransformIdentity;
+    [self updateInteractionState];
+}
+
+- (void)finishEdgeTransitionReturningHome:(BOOL)returningHome cancelled:(BOOL)cancelled {
+    if (returningHome) {
+        [UIView animateWithDuration:0.24 animations:^{
+            self.appTransitionSnapshot.transform = CGAffineTransformMakeScale(0.72, 0.72);
+            self.appTransitionSnapshot.alpha = 0;
             self.navigationBar.alpha = 0;
         } completion:^(BOOL finished) {
-            [self finishHidingLauncher];
+            [self returnToSourceDesktop];
             self.edgeTransitionActive = NO;
         }];
         return;
     }
-    [UIView animateWithDuration:0.25 delay:0 usingSpringWithDamping:0.86 initialSpringVelocity:0 options:0 animations:^{
-        self.launcherContainer.view.transform = CGAffineTransformIdentity;
+    [UIView animateWithDuration:0.22 animations:^{
+        self.appTransitionSnapshot.transform = CGAffineTransformIdentity;
+        self.appTransitionSnapshot.layer.cornerRadius = 0;
+        [self restoreLiveTaskTransitionStates];
         self.navigationBar.transform = CGAffineTransformIdentity;
         self.navigationBar.alpha = 0;
     } completion:^(BOOL finished) {
+        [self.appTransitionSnapshot removeFromSuperview];
+        self.appTransitionSnapshot = nil;
+        [self.backgroundView restoreTaskGeometry];
+        [self restoreSourceDesktop];
         self.edgeTransitionActive = NO;
-        [self fadeNavigationBar];
     }];
 }
 
@@ -683,8 +866,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         UIImpactFeedbackGenerator *feedback = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleRigid];
         [feedback impactOccurred];
         [[LCOSLogManager sharedManager] forceLog:@"LCOS Navigation: dwell reached"];
-        if (self.isGuestNavigation) [self showGuestBackground];
-        else [self showBackground];
+        [self showBackground];
     }];
 }
 
@@ -698,28 +880,134 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     [UIView animateWithDuration:0.3 animations:^{ self.navigationBar.alpha = 0.0; }];
 }
 
+- (UIView *)sourceDesktop {
+    if (self.isGuestNavigation) {
+        NSString *source = @"native";
+        Class utils = NSClassFromString(@"LCSharedUtils");
+        SEL selector = NSSelectorFromString(@"appGroupPath");
+        if ([utils respondsToSelector:selector]) {
+            NSURL *group = ((id (*)(id, SEL))objc_msgSend)(utils, selector);
+            NSDictionary *info = [NSDictionary dictionaryWithContentsOfFile:[group.path stringByAppendingPathComponent:@"LiveContainer/LCOSLaunchSource.plist"]];
+            if ([info[@"source"] isEqualToString:@"lcos"]) source = @"lcos";
+        }
+        if ([source isEqualToString:@"lcos"]) {
+            LCOSLauncherView *launcher = [[LCOSLauncherView alloc] init];
+            [launcher loadViewIfNeeded];
+            launcher.view.frame = self.overlayWindow.bounds;
+            [launcher.view layoutIfNeeded];
+            return launcher.view;
+        }
+        UIView *native = [[UIView alloc] initWithFrame:self.overlayWindow.bounds];
+        native.backgroundColor = UIColor.systemBackgroundColor;
+        UILabel *label = [[UILabel alloc] initWithFrame:native.bounds];
+        label.text = @"LiveContainer";
+        label.textColor = UIColor.secondaryLabelColor;
+        label.textAlignment = NSTextAlignmentCenter;
+        label.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        [native addSubview:label];
+        return native;
+    }
+    return self.isLauncherVisible ? self.launcherContainer.view : self.overlayWindow.rootViewController.view;
+}
+
+- (NSArray<UIView *> *)runningTaskViews {
+    if (self.isGuestNavigation) return @[];
+    NSMutableArray *tasks = [NSMutableArray array];
+    for (NSValue *entry in [LCOSTaskWindows() copy]) {
+        UIView *view = entry.nonretainedObjectValue;
+        if (![view isKindOfClass:UIView.class]) { [LCOSTaskWindows() removeObject:entry]; continue; }
+        id controller = nil;
+        SEL delegateSelector = NSSelectorFromString(@"_viewDelegate");
+        if ([view respondsToSelector:delegateSelector])
+            controller = ((id (*)(id, SEL))objc_msgSend)(view, delegateSelector);
+        if (![controller isKindOfClass:NSClassFromString(@"DecoratedAppSceneViewController")]) continue;
+        SEL sceneSelector = NSSelectorFromString(@"appSceneVC");
+        if (![controller respondsToSelector:sceneSelector]) continue;
+        id scene = ((id (*)(id, SEL))objc_msgSend)(controller, sceneSelector);
+        SEL running = NSSelectorFromString(@"isAppRunning");
+        if (!scene || ![scene respondsToSelector:running]) continue;
+        BOOL alive = ((BOOL (*)(id, SEL))objc_msgSend)(scene, running);
+        if (alive) [tasks addObject:view];
+    }
+    return tasks;
+}
+
+- (BOOL)activateLiveTask:(UIView *)task {
+    if (![self.runningTaskViews containsObject:task]) return NO;
+    for (UIView *other in self.runningTaskViews) {
+        other.hidden = other != task;
+        if (other != task) other.alpha = 0;
+    }
+    id controller = ((id (*)(id, SEL))objc_msgSend)(task, NSSelectorFromString(@"_viewDelegate"));
+    id scene = ((id (*)(id, SEL))objc_msgSend)(controller, NSSelectorFromString(@"appSceneVC"));
+    if ([controller respondsToSelector:NSSelectorFromString(@"appSceneVCWillActivateScene:")])
+        ((void (*)(id, SEL, id))objc_msgSend)(controller, NSSelectorFromString(@"appSceneVCWillActivateScene:"), scene);
+    [task.superview bringSubviewToFront:task];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Task: activating verified live task"];
+    return YES;
+}
+
+- (BOOL)closeLiveTask:(UIView *)task {
+    if (![self.runningTaskViews containsObject:task]) return NO;
+    id controller = ((id (*)(id, SEL))objc_msgSend)(task, NSSelectorFromString(@"_viewDelegate"));
+    SEL close = NSSelectorFromString(@"closeWindow");
+    if (![controller respondsToSelector:close]) return NO;
+    for (NSValue *entry in [LCOSTaskWindows() copy]) if (entry.nonretainedObjectValue == task) [LCOSTaskWindows() removeObject:entry];
+    [self.backgroundView restoreTaskGeometry];
+    [self.backgroundView.sourceView removeFromSuperview];
+    [self.backgroundView removeFromSuperview];
+    self.sourceDesktopView = nil;
+    self.backgroundView = nil;
+    self.activeTaskView = nil;
+    ((LCOSPassThroughWindow *)self.overlayWindow).backgroundView = nil;
+    self.isBackgroundVisible = NO;
+    [self updateInteractionState];
+    ((void (*)(id, SEL))objc_msgSend)(controller, close);
+    return YES;
+}
+
 - (void)prepareBackgroundForCurrentInterface {
     if (!self.backgroundView) {
-        self.backgroundView = [[LCOSBackgroundView alloc] initWithFrame:self.overlayWindow.rootViewController.view.bounds];
+        self.backgroundView = [[LCOSBackgroundView alloc] initWithFrame:self.overlayWindow.bounds];
         self.backgroundView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
         __weak typeof(self) weakSelf = self;
-        self.backgroundView.onClose = ^{ [weakSelf hideBackground]; };
-        self.backgroundView.onEmptySpaceTapped = ^{ [weakSelf hideBackground]; };
+        self.backgroundView.onHome = ^{ [weakSelf hideBackground]; };
+        self.backgroundView.onActivateTask = ^BOOL(UIView *task) { return [weakSelf activateLiveTask:task]; };
+        self.backgroundView.onCloseTask = ^BOOL(UIView *task) { return [weakSelf closeLiveTask:task]; };
+        self.backgroundView.onTaskPresented = ^(UIView *task) {
+            weakSelf.isBackgroundVisible = NO;
+            weakSelf.edgeTransitionActive = NO;
+            weakSelf.edgeLaunchingBackground = NO;
+            weakSelf.activeTaskView = task;
+            weakSelf.sourceDesktopView = nil;
+            weakSelf.backgroundView = nil;
+            ((LCOSPassThroughWindow *)weakSelf.overlayWindow).backgroundView = nil;
+            [weakSelf updateInteractionState];
+        };
     }
-    // The visible host layer is authoritative: native UI remains native and
-    // the LCOS desktop remains LCOS when the switcher is dismissed.
-    self.navigationBar.hidden = YES;
-    self.rightEdgeZone.hidden = YES;
-    [self.backgroundView prepareWithCurrentInterface:self.overlayWindow];
-    self.navigationBar.hidden = NO;
-    self.rightEdgeZone.hidden = NO;
-    if (!self.backgroundView.superview) [self.overlayWindow.rootViewController.view addSubview:self.backgroundView];
-    if ([self.overlayWindow isKindOfClass:LCOSPassThroughWindow.class]) {
+    UIView *desktop = [self sourceDesktop];
+    self.sourceWasHidden = desktop.hidden;
+    self.sourceOriginalAlpha = desktop.alpha;
+    self.sourceInteractionEnabled = desktop.userInteractionEnabled;
+    self.sourceOriginalSuperview = desktop.superview;
+    self.sourceOriginalIndex = self.sourceOriginalSuperview ? [self.sourceOriginalSuperview.subviews indexOfObject:desktop] : 0;
+    self.sourceOriginalFrame = desktop.frame;
+    self.sourceOriginalTransform = desktop.transform;
+    self.sourceDesktopView = desktop;
+    desktop.hidden = NO;
+    [self.backgroundView setSourceDesktop:desktop];
+    if (self.appTransitionSnapshot) {
+        [self.appTransitionSnapshot removeFromSuperview];
+        self.appTransitionSnapshot = nil;
+    }
+    self.liveTaskViews = [self runningTaskViews];
+    [self.backgroundView setLiveTaskViews:self.liveTaskViews];
+    [self.backgroundView setTransitionProgress:1];
+    [self restoreLiveTaskTransitionStates];
+    [self.backgroundView layoutIfNeeded];
+    [self.overlayWindow.rootViewController.view addSubview:self.backgroundView];
+    if ([self.overlayWindow isKindOfClass:LCOSPassThroughWindow.class])
         ((LCOSPassThroughWindow *)self.overlayWindow).backgroundView = self.backgroundView;
-    }
-    [self.overlayWindow.rootViewController.view bringSubviewToFront:self.backgroundView];
-    [self.overlayWindow.rootViewController.view bringSubviewToFront:self.rightEdgeZone];
-    [self.overlayWindow.rootViewController.view bringSubviewToFront:self.navigationBar];
     self.backgroundView.hidden = NO;
 }
 
@@ -732,8 +1020,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 - (void)showBackground {
     if (self.isBackgroundVisible) return;
     [self prepareBackgroundForCurrentInterface];
-    [self.backgroundView setApps:[LCOSAppModel allInstalledApps]];
-    [self.backgroundView setTransitionProgress:0.35];
+    [self.backgroundView setTransitionProgress:1];
     self.isBackgroundVisible = YES;
     [self updateInteractionState];
     [self animateBackgroundProgress:1.0 completion:nil];
@@ -742,78 +1029,22 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 - (void)hideBackground {
     if (!self.isBackgroundVisible) return;
     [self animateBackgroundProgress:0.0 completion:^{
+        [self.backgroundView restoreTaskGeometry];
         self.backgroundView.hidden = YES;
+        [self.backgroundView.sourceView removeFromSuperview];
         [self.backgroundView removeFromSuperview];
-        if ([self.overlayWindow isKindOfClass:LCOSPassThroughWindow.class]) {
-            ((LCOSPassThroughWindow *)self.overlayWindow).backgroundView = nil;
-        }
+        [self restoreLiveTaskTransitionStates];
+        [self restoreSourceDesktop];
+        self.sourceDesktopView = nil;
+        ((LCOSPassThroughWindow *)self.overlayWindow).backgroundView = nil;
+        self.backgroundView = nil;
         self.isBackgroundVisible = NO;
         self.edgeTransitionActive = NO;
         self.edgeLaunchingBackground = NO;
         [self updateInteractionState];
-        [self fadeNavigationBar];
-        [[LCOSLogManager sharedManager] forceLog:@"LCOS Background: closed"];
+        if (self.isGuestNavigation) [self returnToLiveContainer];
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS Background: returned to source desktop"];
     }];
-}
-
-- (void)showGuestBackground {
-    if (self.guestPageSnapshot) return;
-    UIView *root = self.overlayWindow.rootViewController.view;
-    self.navigationBar.hidden = YES;
-    self.rightEdgeZone.hidden = YES;
-    [self.overlayWindow layoutIfNeeded];
-    UIView *snapshot = [self.overlayWindow snapshotViewAfterScreenUpdates:NO];
-    self.navigationBar.hidden = NO;
-    self.rightEdgeZone.hidden = NO;
-    if (!snapshot) return;
-    self.guestPageSnapshot = snapshot;
-    snapshot.frame = root.bounds;
-    [root addSubview:snapshot];
-    self.guestBlurView = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterial]];
-    self.guestBlurView.frame = root.bounds;
-    [root addSubview:self.guestBlurView];
-    UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(28, root.bounds.size.height * 0.42, root.bounds.size.width - 56, 70)];
-    label.text = @"当前应用 · 非运行后台列表";
-    label.numberOfLines = 2;
-    label.textAlignment = NSTextAlignmentCenter;
-    label.textColor = UIColor.whiteColor;
-    label.font = [UIFont systemFontOfSize:20 weight:UIFontWeightSemibold];
-    [self.guestBlurView.contentView addSubview:label];
-    snapshot.layer.cornerRadius = 20;
-    snapshot.layer.cornerCurve = kCACornerCurveContinuous;
-    [UIView animateWithDuration:0.25 animations:^{
-        snapshot.transform = CGAffineTransformMakeScale(0.72, 0.72);
-    }];
-    UITapGestureRecognizer *resume = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(cancelGuestReturn)];
-    [snapshot addGestureRecognizer:resume];
-    UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
-    button.frame = CGRectMake((root.bounds.size.width - 220) / 2, CGRectGetMaxY(label.frame) + 28, 220, 50);
-    button.backgroundColor = [UIColor colorWithWhite:0 alpha:0.35];
-    button.layer.cornerRadius = 20;
-    [button setTitle:@"返回 LiveContainer" forState:UIControlStateNormal];
-    [button setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-    [button addTarget:self action:@selector(returnToLiveContainer) forControlEvents:UIControlEventTouchUpInside];
-    [self.guestBlurView.contentView addSubview:button];
-    UIButton *resumeButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    resumeButton.frame = CGRectMake(button.frame.origin.x, CGRectGetMaxY(button.frame) + 14, 220, 44);
-    [resumeButton setTitle:@"继续当前应用" forState:UIControlStateNormal];
-    [resumeButton setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-    [resumeButton addTarget:self action:@selector(cancelGuestReturn) forControlEvents:UIControlEventTouchUpInside];
-    [self.guestBlurView.contentView addSubview:resumeButton];
-    [root bringSubviewToFront:self.rightEdgeZone];
-    [root bringSubviewToFront:self.navigationBar];
-    [[LCOSLogManager sharedManager] forceLog:@"LCOS Guest: current-app navigation background shown"];
-}
-
-- (void)cancelGuestReturn {
-    [self.guestBlurView removeFromSuperview];
-    self.guestBlurView = nil;
-    [self.guestPageSnapshot removeFromSuperview];
-    self.guestPageSnapshot = nil;
-    self.edgeLaunchingBackground = NO;
-    self.edgeTransitionActive = NO;
-    self.edgeDwellReached = NO;
-    [self fadeNavigationBar];
 }
 
 - (void)returnToLiveContainer {
@@ -822,7 +1053,6 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     SEL selector = @selector(launchToGuestAppWithClassicMode:);
     if (![sharedUtils respondsToSelector:selector]) {
         [[LCOSLogManager sharedManager] forceLog:@"LCOS Guest: LiveContainer return API unavailable"];
-        [self cancelGuestReturn];
         return;
     }
     [[LCOSLogManager sharedManager] forceLog:@"LCOS Guest: returning to LiveContainer host"];
