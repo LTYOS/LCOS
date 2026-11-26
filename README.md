@@ -55,19 +55,21 @@ LCOS/
 
 本项目使用 GitHub Actions 自动编译：
 
-- **运行环境**：macOS-14，Xcode 15.4
+- **运行环境**：GitHub Actions macOS runner
 - **编译器**：clang++
 - **目标架构**：arm64（iPhone）
 - **最低 iOS 版本**：iOS 15.0
-- **输出**：`LCOS.dylib` + `LCOS.dylib.zip`
+- **输出**：仅 `LCOS.dylib`
 
 触发方式：
-- 推送 `main` 分支 → 触发编译，上传 artifact
-- 推送 `v*` 标签 → 触发编译并创建 GitHub Release
+- Pull Request → 编译验证，不创建 Release。
+- 推送 `vMAJOR.MINOR.PATCH` 标签 → 编译并创建 GitHub Release，插件内版本号直接取自标签。
+- 编译失败后重跑同一个标签，版本保持不变，不自动递增。
+- Release 使用 `RELEASE_NOTES.md` 中的中文更新说明。
 
 ## 使用步骤
 
-1. 在 GitHub Actions 页面下载最新的 `LCOS.dylib`（或 Release 下载 `LCOS1.0.x.dylib`）
+1. 在设置页点击“检查更新”下载，或在 GitHub Release 下载 `LCOS.dylib`
 2. 在 iPhone 上打开 LiveContainer
 3. 导入 `LCOS.dylib`，使用已加载的 ID 证书进行签名
 4. 重启 LiveContainer，插件自动生效
