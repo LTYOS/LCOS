@@ -61,10 +61,9 @@
         tapGesture.delegate = self;
         [self.scrollView addGestureRecognizer:tapGesture];
 
-        // A tap already fails when the finger travels. Do not make paging wait
-        // for it: that inverted priority prevented swipes in the page centre.
+        // Icon hit testing happens on a completed tap; paging must not wait
+        // for that tap to fail after the finger has already started moving.
         self.scrollView.panGestureRecognizer.delegate = self;
-        [tapGesture requireGestureRecognizerToFail:self.scrollView.panGestureRecognizer];
 
         self.pageControl = [[UIPageControl alloc] initWithFrame:CGRectZero];
         self.pageControl.hidesForSinglePage = YES;

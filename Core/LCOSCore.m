@@ -24,7 +24,7 @@
 @property (nonatomic, weak) UIView *navigationTouchZone;
 @end
 
-@interface LCOSNavigationTouchZone : UIControl
+@interface LCOSNavigationTouchZone : UIView <UIGestureRecognizerDelegate>
 @property (nonatomic, copy) void (^onPan)(UIPanGestureRecognizer *gesture);
 @property (nonatomic, copy) void (^onTap)(void);
 @end
@@ -32,9 +32,18 @@
 - (instancetype)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:frame];
     if (self) {
+        // UIControl's touch tracking can prevent a scroll-style pan before it
+        // begins. A plain view with explicit recognizers keeps the edge swipe
+        // reliable in both native and guest interfaces.
         UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
+        pan.maximumNumberOfTouches = 1;
+        pan.cancelsTouchesInView = NO;
+        pan.delegate = self;
         [self addGestureRecognizer:pan];
         UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTap:)];
+        tap.cancelsTouchesInView = NO;
+        tap.delegate = self;
+        [tap requireGestureRecognizerToFail:pan];
         [self addGestureRecognizer:tap];
     }
     return self;
@@ -42,6 +51,14 @@
 - (void)handlePan:(UIPanGestureRecognizer *)gesture { if (self.onPan) self.onPan(gesture); }
 - (void)handleTap:(UITapGestureRecognizer *)gesture {
     if (gesture.state == UIGestureRecognizerStateEnded && self.onTap) self.onTap();
+}
+- (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)recognizer {
+    if (![recognizer isKindOfClass:UIPanGestureRecognizer.class]) return YES;
+    CGPoint velocity = [(UIPanGestureRecognizer *)recognizer velocityInView:self];
+    return velocity.x < -10 && fabs(velocity.x) > fabs(velocity.y);
+}
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)recognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)other {
+    return NO;
 }
 @end
 
@@ -196,25 +213,48 @@ static void lcos_removeRunningApp(id self, SEL _cmd, NSString *uuid) {
     if (orig_removeRunningApp) orig_removeRunningApp(self, _cmd, uuid);
 }
 
+static BOOL LCOSMethodMatches(Method method, NSUInteger objectArgumentCount) {
+    if (!method) return NO;
+    const char *types = method_getTypeEncoding(method);
+    if (!types) return NO;
+    NSMethodSignature *signature = [NSMethodSignature signatureWithObjCTypes:types];
+    if (signature.numberOfArguments != objectArgumentCount + 2 || strcmp(signature.methodReturnType, "v") != 0) return NO;
+    for (NSUInteger index = 2; index < signature.numberOfArguments; index++) {
+        if (strcmp([signature getArgumentTypeAtIndex:index], "@") != 0) return NO;
+    }
+    return YES;
+}
+
 static void LCOSInstallTaskHooks(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        Class dock = NSClassFromString(@"MultitaskDockManager");
-        Method add = class_getInstanceMethod(dock, @selector(addRunningApp:appUUID:view:));
-        if (add) {
-            orig_addRunningApp = (void *)method_getImplementation(add);
-            method_setImplementation(add, (IMP)lcos_addRunningApp);
-        }
-        Method remove = class_getInstanceMethod(dock, @selector(removeRunningApp:));
-        if (remove) {
-            orig_removeRunningApp = (void *)method_getImplementation(remove);
-            method_setImplementation(remove, (IMP)lcos_removeRunningApp);
-        }
-        id manager = ((id (*)(id, SEL))objc_msgSend)(dock, NSSelectorFromString(@"shared"));
-        id apps = [manager valueForKey:@"apps"];
-        if ([apps isKindOfClass:NSArray.class]) for (id app in apps) {
-            UIView *view = [app valueForKey:@"view"];
-            if ([view isKindOfClass:UIView.class]) lcos_addRunningApp(nil, nil, nil, nil, view);
+        @try {
+            Class dock = NSClassFromString(@"MultitaskDockManager");
+            if (!dock) {
+                [[LCOSLogManager sharedManager] forceLog:@"LCOS Task: host dock class unavailable; live tasks disabled"];
+                return;
+            }
+            // Only install hooks whose runtime type encodings exactly match the
+            // known host methods. Do not read Swift-private apps/view via KVC:
+            // neither member is guaranteed to be exposed to Objective-C.
+            struct { SEL selector; NSUInteger arguments; IMP replacement; void **original; } hooks[] = {
+                {@selector(addRunningApp:appUUID:view:), 3, (IMP)lcos_addRunningApp, (void **)&orig_addRunningApp},
+                {@selector(removeRunningApp:), 1, (IMP)lcos_removeRunningApp, (void **)&orig_removeRunningApp},
+            };
+            for (NSUInteger index = 0; index < sizeof(hooks) / sizeof(hooks[0]); index++) {
+                Method method = class_getInstanceMethod(dock, hooks[index].selector);
+                if (!LCOSMethodMatches(method, hooks[index].arguments)) {
+                    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
+                        @"LCOS Task: skipped incompatible selector %@", NSStringFromSelector(hooks[index].selector)]];
+                    continue;
+                }
+                *hooks[index].original = (void *)method_getImplementation(method);
+                method_setImplementation(method, hooks[index].replacement);
+            }
+            [[LCOSLogManager sharedManager] forceLog:@"LCOS Task: compatible runtime hooks installed; no Swift KVC"];
+        } @catch (NSException *exception) {
+            [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
+                @"LCOS Task: runtime hook setup failed; live tasks disabled: %@ %@", exception.name, exception.reason]];
         }
     });
 }
@@ -614,12 +654,16 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     if (self.isLauncherVisible || self.isBackgroundVisible || self.edgeTransitionActive) return;
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(fadeNavigationBar) object:nil];
     self.navigationBar.hidden = NO;
+    [self.navigationBar.layer removeAllAnimations];
     self.navigationBar.transform = CGAffineTransformIdentity;
     self.navigationBar.alpha = 0.85;
-    [UIView animateWithDuration:0.14 animations:^{ self.navigationBar.transform = CGAffineTransformMakeTranslation(-7, 0); }
-        completion:^(BOOL finished) { [UIView animateWithDuration:0.24 delay:0 usingSpringWithDamping:0.55 initialSpringVelocity:0 options:0 animations:^{
+    [UIView animateWithDuration:0.12 delay:0 options:UIViewAnimationOptionCurveEaseOut | UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction animations:^{
+        self.navigationBar.transform = CGAffineTransformMakeTranslation(-3, 0);
+    } completion:^(BOOL finished) {
+        [UIView animateWithDuration:0.42 delay:0 usingSpringWithDamping:0.78 initialSpringVelocity:0.15 options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction animations:^{
             self.navigationBar.transform = CGAffineTransformIdentity;
-        } completion:nil]; }];
+        } completion:nil];
+    }];
     [self performSelector:@selector(fadeNavigationBar) withObject:nil afterDelay:1.5];
 }
 
@@ -654,7 +698,9 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     CGPoint point = [gesture locationInView:self.overlayWindow];
     CGFloat zoneWidth = MAX(32.0, width * 0.07);
     if (gesture.state == UIGestureRecognizerStateBegan) {
-        if (self.launcherTransitionActive || self.overlayWindow.rootViewController.presentedViewController || point.x < width - zoneWidth) {
+        [self.navigationBar.layer removeAllAnimations];
+        if (self.edgeTransitionActive || self.edgeLaunchingBackground || self.isBackgroundVisible || self.isLauncherVisible ||
+            self.launcherTransitionActive || self.overlayWindow.rootViewController.presentedViewController || point.x < width - zoneWidth) {
             gesture.enabled = NO;
             gesture.enabled = YES;
             return;
@@ -665,7 +711,14 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         self.edgeLaunchingBackground = NO;
         self.edgeStartX = point.x;
         self.lastEdgeTravel = 0;
-        [self prepareAppReturnTransition];
+        @try {
+            [self prepareAppReturnTransition];
+        } @catch (NSException *exception) {
+            [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
+                @"LCOS Navigation: preparation failed safely: %@ %@", exception.name, exception.reason]];
+            [self discardFailedBackground];
+            return;
+        }
         [self.overlayWindow.rootViewController.view bringSubviewToFront:self.rightEdgeZone];
         [self.overlayWindow.rootViewController.view bringSubviewToFront:self.navigationBar];
         [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSLauncherGestureActive" object:@YES];
@@ -674,12 +727,14 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         [UIView animateWithDuration:0.18 animations:^{ self.navigationBar.alpha = 1.0; }];
         UIImpactFeedbackGenerator *feedback = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
         [feedback impactOccurred];
-        [self scheduleEdgeDwell];
         [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Navigation: began guest=%d background=%d", self.isGuestNavigation, self.isBackgroundVisible]];
     } else if (self.edgeTransitionActive && gesture.state == UIGestureRecognizerStateChanged) {
         if (self.edgeLaunchingBackground) return;
         CGFloat travel = self.edgeStartX - point.x;
         self.lastEdgeTravel = MAX(0, travel);
+        // Dwell starts only after a real leftward movement, not on a tap.
+        if (travel >= 8) [self scheduleEdgeDwell];
+        else { [self cancelEdgeDwell]; self.edgeDwellReached = NO; }
         if (self.edgeDwellReached) {
             [self.backgroundView setTransitionProgress:MIN(1.0, MAX(0, travel / 80.0))];
         } else if (self.isBackgroundVisible) {
@@ -698,10 +753,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
             ((self.lastEdgeTravel > 24.0 && velocityX < -120.0) || self.lastEdgeTravel > 64.0);
         [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Navigation: end travel=%.1f dwell=%d returnsHome=%d", self.lastEdgeTravel, dwell, returnsHome]];
         if (self.isBackgroundVisible) {
-            self.edgeTransitionActive = NO;
-            self.edgeLaunchingBackground = NO;
-            self.navigationBar.alpha = 0;
-            self.navigationBar.transform = CGAffineTransformIdentity;
+            [self resetEdgeTransitionState];
             return;
         }
         [self finishEdgeTransitionReturningHome:returnsHome cancelled:gesture.state != UIGestureRecognizerStateEnded];
@@ -727,6 +779,10 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     if (self.appTransitionSnapshot || self.isBackgroundVisible || self.isLauncherVisible) return;
     UIView *root = self.overlayWindow.rootViewController.view;
     self.sourceDesktopView = [self sourceDesktop];
+    if (!self.sourceDesktopView) {
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS Navigation: no source desktop; transition cancelled"];
+        return;
+    }
     self.sourceWasHidden = self.sourceDesktopView.hidden;
     self.sourceOriginalAlpha = self.sourceDesktopView.alpha;
     self.sourceInteractionEnabled = self.sourceDesktopView.userInteractionEnabled;
@@ -837,7 +893,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
             self.navigationBar.alpha = 0;
         } completion:^(BOOL finished) {
             [self returnToSourceDesktop];
-            self.edgeTransitionActive = NO;
+            [self resetEdgeTransitionState];
         }];
         return;
     }
@@ -852,7 +908,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         self.appTransitionSnapshot = nil;
         [self.backgroundView restoreTaskGeometry];
         [self restoreSourceDesktop];
-        self.edgeTransitionActive = NO;
+        [self resetEdgeTransitionState];
     }];
 }
 
@@ -873,6 +929,36 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 - (void)cancelEdgeDwell {
     [self.edgeDwellTimer invalidate];
     self.edgeDwellTimer = nil;
+}
+
+- (void)resetEdgeTransitionState {
+    [self cancelEdgeDwell];
+    self.edgeTransitionActive = NO;
+    self.edgeDwellReached = NO;
+    self.edgeLaunchingBackground = NO;
+    self.lastEdgeTravel = 0;
+    [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSLauncherGestureActive" object:@NO];
+    [self.navigationBar.layer removeAllAnimations];
+    self.navigationBar.transform = CGAffineTransformIdentity;
+    self.navigationBar.alpha = 0;
+}
+
+- (void)discardFailedBackground {
+    [self.backgroundView.layer removeAllAnimations];
+    [self.backgroundView restoreTaskGeometry];
+    [self.backgroundView detachSourceDesktop];
+    [self.backgroundView removeFromSuperview];
+    [self restoreLiveTaskTransitionStates];
+    [self.appTransitionSnapshot removeFromSuperview];
+    self.appTransitionSnapshot = nil;
+    [self restoreSourceDesktop];
+    self.sourceDesktopView = nil;
+    self.activeTaskView = nil;
+    self.backgroundView = nil;
+    ((LCOSPassThroughWindow *)self.overlayWindow).backgroundView = nil;
+    self.isBackgroundVisible = NO;
+    [self resetEdgeTransitionState];
+    [self updateInteractionState];
 }
 
 - (void)fadeNavigationBar {
@@ -907,11 +993,29 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         [native addSubview:label];
         return native;
     }
-    return self.isLauncherVisible ? self.launcherContainer.view : self.overlayWindow.rootViewController.view;
+    if (self.isLauncherVisible) return self.launcherContainer.view;
+    // The overlay root is an ancestor of the background view and must never be
+    // inserted into its own hierarchy. Use an independent native-window view
+    // instead, preserving the native source desktop without a view cycle.
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class]) continue;
+        for (UIWindow *window in ((UIWindowScene *)scene).windows.reverseObjectEnumerator) {
+            if (window == self.overlayWindow || window.hidden || window.alpha < 0.01) continue;
+            UIView *snapshot = [window snapshotViewAfterScreenUpdates:NO];
+            if (snapshot) {
+                snapshot.frame = self.overlayWindow.bounds;
+                return snapshot;
+            }
+        }
+    }
+    UIView *fallback = [[UIView alloc] initWithFrame:self.overlayWindow.bounds];
+    fallback.backgroundColor = UIColor.systemBackgroundColor;
+    return fallback;
 }
 
 - (NSArray<UIView *> *)runningTaskViews {
     if (self.isGuestNavigation) return @[];
+    @try {
     NSMutableArray *tasks = [NSMutableArray array];
     for (NSValue *entry in [LCOSTaskWindows() copy]) {
         UIView *view = entry.nonretainedObjectValue;
@@ -930,6 +1034,11 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         if (alive) [tasks addObject:view];
     }
     return tasks;
+    } @catch (NSException *exception) {
+        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
+            @"LCOS Task: incompatible task ignored: %@ %@", exception.name, exception.reason]];
+        return @[];
+    }
 }
 
 - (BOOL)activateLiveTask:(UIView *)task {
@@ -961,6 +1070,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     self.activeTaskView = nil;
     ((LCOSPassThroughWindow *)self.overlayWindow).backgroundView = nil;
     self.isBackgroundVisible = NO;
+    [self resetEdgeTransitionState];
     [self updateInteractionState];
     ((void (*)(id, SEL))objc_msgSend)(controller, close);
     return YES;
@@ -976,8 +1086,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         self.backgroundView.onCloseTask = ^BOOL(UIView *task) { return [weakSelf closeLiveTask:task]; };
         self.backgroundView.onTaskPresented = ^(UIView *task) {
             weakSelf.isBackgroundVisible = NO;
-            weakSelf.edgeTransitionActive = NO;
-            weakSelf.edgeLaunchingBackground = NO;
+            [weakSelf resetEdgeTransitionState];
             weakSelf.activeTaskView = task;
             weakSelf.sourceDesktopView = nil;
             weakSelf.backgroundView = nil;
@@ -1019,11 +1128,20 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 
 - (void)showBackground {
     if (self.isBackgroundVisible) return;
-    [self prepareBackgroundForCurrentInterface];
-    [self.backgroundView setTransitionProgress:1];
-    self.isBackgroundVisible = YES;
-    [self updateInteractionState];
-    [self animateBackgroundProgress:1.0 completion:nil];
+    @try {
+        [self prepareBackgroundForCurrentInterface];
+        [self.backgroundView setTransitionProgress:1];
+        self.isBackgroundVisible = YES;
+        [self updateInteractionState];
+        [self animateBackgroundProgress:1.0 completion:^{
+            [self resetEdgeTransitionState];
+            [[LCOSLogManager sharedManager] forceLog:@"LCOS Background: presentation completed"];
+        }];
+    } @catch (NSException *exception) {
+        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
+            @"LCOS Background: preparation failed safely: %@ %@", exception.name, exception.reason]];
+        [self discardFailedBackground];
+    }
 }
 
 - (void)hideBackground {
@@ -1039,8 +1157,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         ((LCOSPassThroughWindow *)self.overlayWindow).backgroundView = nil;
         self.backgroundView = nil;
         self.isBackgroundVisible = NO;
-        self.edgeTransitionActive = NO;
-        self.edgeLaunchingBackground = NO;
+        [self resetEdgeTransitionState];
         [self updateInteractionState];
         if (self.isGuestNavigation) [self returnToLiveContainer];
         [[LCOSLogManager sharedManager] forceLog:@"LCOS Background: returned to source desktop"];
@@ -1056,7 +1173,8 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         return;
     }
     [[LCOSLogManager sharedManager] forceLog:@"LCOS Guest: returning to LiveContainer host"];
-    ((void (*)(id, SEL, NSUInteger))objc_msgSend)(sharedUtils, selector, 0);
+    BOOL accepted = ((BOOL (*)(id, SEL, NSUInteger))objc_msgSend)(sharedUtils, selector, 0);
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Guest: host return accepted=%d", accepted]];
 }
 
 - (void)layoutRadiusChanged {
