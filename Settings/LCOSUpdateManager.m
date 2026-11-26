@@ -10,6 +10,10 @@ __attribute__((used)) static const char kLCOSVersion[] = LCOS_VERSION_STRING;
 static NSString *const kLCOSIgnoredVersion = @"LCOSIgnoredReleaseVersion";
 static NSString *const kLCOSUpdateErrorDomain = @"LCOSUpdateError";
 
+@interface LCOSUpdateManager ()
+@property (nonatomic, copy) NSString *resolvedPluginDirectory;
+@end
+
 @implementation LCOSUpdateManager
 
 + (instancetype)shared {
@@ -114,26 +118,72 @@ static NSString *const kLCOSUpdateErrorDomain = @"LCOSUpdateError";
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Update: ignored %@", version]];
 }
 
-- (NSString *)pluginDirectory {
-    // LCBootstrap.m sets this to the actual host Tweaks directory before
-    // loading global tweaks. Do not guess a guest container's Documents path.
+- (NSArray<NSString *> *)pluginDirectoryCandidates {
+    NSMutableArray<NSString *> *paths = [NSMutableArray array];
+    void (^add)(NSString *) = ^(NSString *path) {
+        if (![path isKindOfClass:NSString.class] || !path.isAbsolutePath) return;
+        NSString *standard = path.stringByStandardizingPath;
+        if (!standard.length || [paths containsObject:standard]) return;
+        [paths addObject:standard];
+    };
     const char *value = getenv("LC_GLOBAL_TWEAKS_FOLDER");
-    if (!value) return nil;
-    NSString *path = [NSFileManager.defaultManager stringWithFileSystemRepresentation:value length:strlen(value)];
-    return path.length ? path.stringByStandardizingPath : nil;
+    if (value) add([NSFileManager.defaultManager stringWithFileSystemRepresentation:value length:strlen(value)]);
+    // The user-confirmed host layout is root/LCOS/logs and root/Tweaks.
+    // Derive that sibling from the already working log writer, rather than
+    // relying on a differently constructed App Group URL during updates.
+    NSString *sibling = [[LCOSLogManager sharedManager] siblingTweaksDirectory];
+    add(sibling);
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Update: log-derived Tweaks candidate %@", sibling ?: @"(unavailable)"]];
+    @try {
+        Class shared = NSClassFromString(@"LCSharedUtils");
+        SEL groupSelector = NSSelectorFromString(@"appGroupPath");
+        if ([shared respondsToSelector:groupSelector]) {
+            id group = ((id (*)(id, SEL))objc_msgSend)(shared, groupSelector);
+            if ([group isKindOfClass:NSURL.class]) add([[group path] stringByAppendingPathComponent:@"LiveContainer/Tweaks"]);
+            else if ([group isKindOfClass:NSString.class]) add([group stringByAppendingPathComponent:@"LiveContainer/Tweaks"]);
+        }
+    } @catch (NSException *exception) {
+        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Update: App Group path unavailable: %@", exception.name]];
+    }
+    const char *home = getenv("LC_HOME_PATH");
+    if (home) add([[NSFileManager.defaultManager stringWithFileSystemRepresentation:home length:strlen(home)] stringByAppendingPathComponent:@"Documents/Tweaks"]);
+    NSString *documents = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+    add([documents stringByAppendingPathComponent:@"Tweaks"]);
+    return paths;
+}
+
+- (NSString *)pluginDirectory {
+    // Do not create an empty candidate: only the existing LCOS.dylib proves
+    // that this is the installed module directory and not a guest container.
+    return [[self pluginDirectoryCandidates] firstObject];
 }
 
 - (BOOL)validPluginDirectory:(NSString *)directory error:(NSError **)error {
-    BOOL directoryExists = NO;
-    NSString *target = [directory stringByAppendingPathComponent:@"LCOS.dylib"];
-    if (directory.length == 0 || ![directory.lastPathComponent isEqualToString:@"Tweaks"] ||
-        ![NSFileManager.defaultManager fileExistsAtPath:directory isDirectory:&directoryExists] || !directoryExists ||
-        ![NSFileManager.defaultManager fileExistsAtPath:target]) {
-        if (error) *error = [self error:9 description:@"未确认 LiveContainer 的 LCOS 模块目录，已停止更新，旧版本未覆盖"];
-        return NO;
+    NSFileManager *fm = NSFileManager.defaultManager;
+    NSString *failure = nil;
+    for (NSString *candidate in [self pluginDirectoryCandidates]) {
+        if (directory.length && ![candidate isEqualToString:directory]) continue;
+        BOOL isDirectory = NO;
+        if (![fm fileExistsAtPath:candidate isDirectory:&isDirectory] || !isDirectory) {
+            failure = [NSString stringWithFormat:@"插件目录不存在：%@", candidate];
+            continue;
+        }
+        NSString *target = [candidate stringByAppendingPathComponent:@"LCOS.dylib"];
+        if (![fm fileExistsAtPath:target isDirectory:&isDirectory] || isDirectory) {
+            failure = [NSString stringWithFormat:@"插件目录内没有 LCOS.dylib：%@", candidate];
+            continue;
+        }
+        if (![fm isWritableFileAtPath:candidate] || ![fm isWritableFileAtPath:target]) {
+            failure = [NSString stringWithFormat:@"插件目录或 LCOS.dylib 不可写：%@", candidate];
+            continue;
+        }
+        self.resolvedPluginDirectory = candidate;
+        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Update: verified host tweaks directory %@", candidate]];
+        return YES;
     }
-    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Update: verified host tweaks directory %@", directory]];
-    return YES;
+    if (error) *error = [self error:9 description:[NSString stringWithFormat:@"%@，已停止更新，旧版本未覆盖。请确认 LCOS.dylib 位于与 LCOS 日志文件夹同级的 Tweaks 内", failure ?: @"未找到已安装的 LCOS.dylib"]];
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Update: no verified Tweaks directory: %@", failure ?: @"no candidates"]];
+    return NO;
 }
 
 - (BOOL)validBinary:(NSData *)data {
@@ -151,6 +201,7 @@ static NSString *const kLCOSUpdateErrorDomain = @"LCOSUpdateError";
         [self finishInstall:completion error:directoryError];
         return;
     }
+    NSString *installDirectory = self.resolvedPluginDirectory;
     NSURL *url = [NSURL URLWithString:release[@"browser_download_url"]];
     if (![url.scheme isEqualToString:@"https"] ||
         !([url.host isEqualToString:@"github.com"] || [url.host hasSuffix:@".github.com"] || [url.host hasSuffix:@".githubusercontent.com"])) {
@@ -167,11 +218,10 @@ static NSString *const kLCOSUpdateErrorDomain = @"LCOSUpdateError";
         if (![self validBinary:data]) {
             [self finishInstall:completion error:[self error:5 description:@"下载内容不是有效的 LCOS 插件，未覆盖旧版本"]]; return;
         }
-        NSString *staging = [directory stringByAppendingPathComponent:@".LCOS.dylib.download"];
+        NSString *staging = [installDirectory stringByAppendingPathComponent:@".LCOS.dylib.download"];
         NSFileManager *fm = NSFileManager.defaultManager;
         NSError *writeError = nil;
-        [fm createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:&writeError];
-        if (writeError || ![data writeToFile:staging options:NSDataWritingAtomic error:&writeError]) {
+        if (![data writeToFile:staging options:NSDataWritingAtomic error:&writeError]) {
             [self finishInstall:completion error:writeError ?: [self error:6 description:@"无法写入插件目录"]]; return;
         }
         [self signAndReplace:staging release:release completion:completion];
@@ -202,10 +252,10 @@ static NSString *const kLCOSUpdateErrorDomain = @"LCOSUpdateError";
 
 - (BOOL)replaceStagedBinary:(NSString *)staging error:(NSError **)error {
     NSFileManager *fm = NSFileManager.defaultManager;
-    NSString *target = [self.pluginDirectory stringByAppendingPathComponent:@"LCOS.dylib"];
+    NSString *directory = staging.stringByDeletingLastPathComponent;
+    NSString *target = [directory stringByAppendingPathComponent:@"LCOS.dylib"];
     NSURL *targetURL = [NSURL fileURLWithPath:target];
     NSURL *stagingURL = [NSURL fileURLWithPath:staging];
-    NSString *directory = target.stringByDeletingLastPathComponent;
     NSString *backup = [directory stringByAppendingPathComponent:@"LCOS.dylib.backup"];
     [fm removeItemAtPath:backup error:nil];
     if (![fm copyItemAtPath:target toPath:backup error:error]) {
