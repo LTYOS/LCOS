@@ -12,6 +12,7 @@
 #import "LCOSAppModel.h"
 #import "LCOSLayout.h"
 #import <objc/runtime.h>
+#import <objc/message.h>
 
 // Pass-through window - like LCOrbitPassThroughWindow
 // Transparent regions pass touches to underlying windows
