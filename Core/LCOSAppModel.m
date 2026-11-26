@@ -138,13 +138,11 @@ static NSString *const kLCOSAppsDirectory = @"Applications";
     appInfo = ((id (*)(id, SEL, NSString *))objc_msgSend)(appInfo, @selector(initWithBundlePath:), _bundlePath);
     if (!appInfo) return NO;
 
-    // Match LCAppModel.runApp: save the container object first, create its
-    // metadata, then select its UUID. Calling the setter through KVC also
-    // preserves Swift/Objective-C selector bridging on different LC builds.
-    [appInfo setValue:@[container] forKey:@"containers"];
+    // Match LCAppModel.runApp with checked selectors, never Swift KVC.
+    ((void (*)(id, SEL, NSArray *))objc_msgSend)(appInfo, setContainersSelector, @[container]);
     ((void (*)(id, SEL, NSString *, NSInteger))objc_msgSend)(container,
         makeSelector, _bundleIdentifier, 0);
-    [appInfo setValue:uuid forKey:@"dataUUID"];
+    ((void (*)(id, SEL, NSString *))objc_msgSend)(appInfo, setDataUUIDSelector, uuid);
 
     NSString *plistPath = [_bundlePath stringByAppendingPathComponent:@"LCAppInfo.plist"];
     NSDictionary *savedInfo = [NSDictionary dictionaryWithContentsOfFile:plistPath];
