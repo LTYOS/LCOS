@@ -8,7 +8,7 @@ static NSDictionary<NSString *, NSNumber *> *LCOSDefaults(void) {
     return @{ @"iconSize": @68.5, @"cornerRadius": @20, @"labelGap": @5,
               @"topInset": @94.4, @"bottomInset": @40, @"rowSpacing": @17,
               @"columnSpacing": @30, @"pageSize": @6, @"pageOffset": @0,
-              @"sheetRadius": @24 };
+              @"sheetRadius": @60 };
 }
 
 @implementation LCOSLayout

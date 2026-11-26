@@ -19,6 +19,8 @@
 @property (nonatomic, strong) NSMutableArray<LCOSAppModel *> *apps;
 @property (nonatomic, strong) NSMutableArray<LCOSAppCardView *> *cards;
 @property (nonatomic, strong) UILabel *emptyLabel;
+@property (nonatomic, strong) UILabel *listTitleLabel;
+@property (nonatomic, strong) UIButton *returnButton;
 @property (nonatomic, strong) UIPanGestureRecognizer *dismissGesture;
 @property (nonatomic, strong) UISelectionFeedbackGenerator *selectionFeedback;
 @property (nonatomic, assign) NSInteger selectedIndex;
@@ -51,6 +53,19 @@
         self.scrollView.directionalLockEnabled = YES;
         self.scrollView.delegate = self;
         [self addSubview:self.scrollView];
+
+        self.listTitleLabel = [[UILabel alloc] init];
+        self.listTitleLabel.text = @"已安装应用 · 非运行后台";
+        self.listTitleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
+        self.listTitleLabel.textColor = UIColor.whiteColor;
+        [self addSubview:self.listTitleLabel];
+        self.returnButton = [UIButton buttonWithType:UIButtonTypeSystem];
+        self.returnButton.backgroundColor = [UIColor colorWithWhite:0 alpha:0.35];
+        self.returnButton.layer.cornerRadius = 18;
+        [self.returnButton setTitle:@"返回" forState:UIControlStateNormal];
+        [self.returnButton setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
+        [self.returnButton addTarget:self action:@selector(returnTapped) forControlEvents:UIControlEventTouchUpInside];
+        [self addSubview:self.returnButton];
 
         self.emptyLabel = [[UILabel alloc] init];
         self.emptyLabel.text = @"没有已安装的应用";
@@ -128,7 +143,7 @@
         icon.clipsToBounds = YES;
         [card.surface addSubview:icon];
         UILabel *entry = [[UILabel alloc] init];
-        entry.text = @"应用入口";
+        entry.text = @"已安装应用 · 点击启动";
         entry.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
         entry.textColor = UIColor.secondaryLabelColor;
         entry.textAlignment = NSTextAlignmentCenter;
@@ -185,6 +200,8 @@
     self.dimView.frame = self.bounds;
     self.scrollView.frame = self.bounds;
     self.emptyLabel.frame = CGRectMake(24, (height - 30) / 2, width - 48, 30);
+    self.listTitleLabel.frame = CGRectMake(24, self.safeAreaInsets.top + 18, width - 144, 36);
+    self.returnButton.frame = CGRectMake(width - 104, self.safeAreaInsets.top + 18, 80, 36);
     self.cardWidth = MIN(360, width * 0.79);
     self.cardStride = self.cardWidth + 10;
     CGFloat cardHeight = MIN(570, height * 0.61);
@@ -204,6 +221,9 @@
 - (void)setTransitionProgress:(CGFloat)progress {
     _transitionProgress = MAX(0, MIN(1, progress));
     self.dimView.alpha = 0.24 * _transitionProgress;
+    self.listTitleLabel.alpha = _transitionProgress;
+    self.returnButton.alpha = _transitionProgress;
+    self.returnButton.enabled = _transitionProgress > 0.85;
     self.sourceView.transform = CGAffineTransformMakeScale(1.0 - 0.035 * _transitionProgress,
                                                             1.0 - 0.035 * _transitionProgress);
     self.sourceView.layer.cornerRadius = 18 * _transitionProgress;
@@ -320,6 +340,10 @@
         return ![touch.view isDescendantOfView:self.scrollView];
     }
     return YES;
+}
+
+- (void)returnTapped {
+    if (self.onClose) self.onClose();
 }
 
 - (void)backgroundTapped:(UITapGestureRecognizer *)gesture {
