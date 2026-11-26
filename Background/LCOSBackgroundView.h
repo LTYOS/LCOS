@@ -10,4 +10,5 @@
 - (void)setLiveTaskViews:(NSArray<UIView *> *)taskViews;
 - (void)setTransitionProgress:(CGFloat)progress;
 - (void)restoreTaskGeometry;
+- (void)detachSourceDesktop;
 @end
