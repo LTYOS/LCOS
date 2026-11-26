@@ -162,6 +162,8 @@ static NSString *const kLCOSAppsDirectory = @"Applications";
 - (void)launch {
     if (_isLaunching) return;
     _isLaunching = YES;
+    self.launchFromLCOSDesktop = [NSUserDefaults.standardUserDefaults boolForKey:@"LCOSLaunchFromDesktop"];
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"LCOSLaunchFromDesktop"];
 
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
         @"LCOSAppModel: launching %@ bundle=%@ container=%@", _displayName,
@@ -181,6 +183,8 @@ static NSString *const kLCOSAppsDirectory = @"Applications";
     // Initialize the first container before restarting, like LCAppModel.runApp.
     [self ensureContainerIfNeeded];
     if (_containerFolderName.length > 0 && [sharedUtils respondsToSelector:directSelector]) {
+        if ([sharedUtils respondsToSelector:NSSelectorFromString(@"lcosRecordLaunchSource:")])
+            ((void (*)(id, SEL, BOOL))objc_msgSend)(sharedUtils, NSSelectorFromString(@"lcosRecordLaunchSource:"), self.launchFromLCOSDesktop);
         components.scheme = [self hostURLScheme];
         NSUserDefaults *defaults = [self hostDefaults];
         [defaults setBool:NO forKey:@"LCOpenSideStore"];
