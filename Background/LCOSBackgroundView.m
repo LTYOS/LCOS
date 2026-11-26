@@ -69,6 +69,11 @@ static char kLCOSTaskRadiusKey;
     return [NSValue valueWithNonretainedObject:task];
 }
 
+- (void)detachSourceDesktop {
+    [self.sourceView removeFromSuperview];
+    self.sourceView = nil;
+}
+
 - (void)setSourceDesktop:(UIView *)desktop {
     if (self.sourceView.superview) [self restoreTaskGeometry];
     [self.sourceView removeFromSuperview];
@@ -136,13 +141,13 @@ static char kLCOSTaskRadiusKey;
         CGFloat h = MIN(cardHeight, cardWidth / aspect);
         CGRect frame = CGRectMake(index * self.stride + (cardWidth - w) / 2,
             safe.top + (available - h) / 2, w, h);
-        self.cardFrames[self.keyForTask(task)] = [NSValue valueWithCGRect:frame];
+        self.cardFrames[[self keyForTask:task]] = [NSValue valueWithCGRect:frame];
         if (self.sourceView.superview && self.transitionProgress > 0) [self placeTaskInCard:task];
     }
 }
 
 - (void)placeTaskInCard:(UIView *)task {
-    NSValue *value = self.cardFrames[self.keyForTask(task)];
+    NSValue *value = self.cardFrames[[self keyForTask:task]];
     if (!value || !self.sourceView.superview || !task.superview) return;
     CGRect frame = [self.scrollView convertRect:value.CGRectValue toView:self.sourceView.superview];
     CGSize source = task.bounds.size;
@@ -194,7 +199,7 @@ static char kLCOSTaskRadiusKey;
     if (gesture.state != UIGestureRecognizerStateEnded) return;
     CGPoint location = [gesture locationInView:self.scrollView];
     for (UIView *task in self.taskViews) {
-        if (!CGRectContainsPoint([self.cardFrames[self.keyForTask(task)] CGRectValue], location)) continue;
+        if (!CGRectContainsPoint([self.cardFrames[[self keyForTask:task]] CGRectValue], location)) continue;
         if (!self.onActivateTask || !self.onActivateTask(task)) return;
         NSDictionary *geometry = objc_getAssociatedObject(task, &kLCOSTaskGeometryKey);
         self.presentingTask = YES;
@@ -222,7 +227,7 @@ static char kLCOSTaskRadiusKey;
     CGPoint location = [gesture locationInView:self.scrollView];
     UIView *task = nil;
     for (UIView *candidate in self.taskViews) {
-        if (CGRectContainsPoint([self.cardFrames[self.keyForTask(candidate)] CGRectValue], location)) { task = candidate; break; }
+        if (CGRectContainsPoint([self.cardFrames[[self keyForTask:candidate]] CGRectValue], location)) { task = candidate; break; }
     }
     if (!task) return;
     CGFloat translation = [gesture translationInView:self].y;
