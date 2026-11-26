@@ -2,9 +2,12 @@
 #import <UIKit/UIKit.h>
 
 @interface LCOSBackgroundView : UIView
-@property (nonatomic, copy) void (^onClose)(void);
-@property (nonatomic, copy) void (^onEmptySpaceTapped)(void);
-- (void)setApps:(NSArray *)apps;
-- (void)prepareWithCurrentInterface:(UIView *)interfaceView;
+@property (nonatomic, copy) void (^onHome)(void);
+@property (nonatomic, copy) BOOL (^onActivateTask)(UIView *taskView);
+@property (nonatomic, copy) BOOL (^onCloseTask)(UIView *taskView);
+@property (nonatomic, copy) void (^onTaskPresented)(UIView *taskView);
+- (void)setSourceDesktop:(UIView *)desktop;
+- (void)setLiveTaskViews:(NSArray<UIView *> *)taskViews;
 - (void)setTransitionProgress:(CGFloat)progress;
+- (void)restoreTaskGeometry;
 @end
