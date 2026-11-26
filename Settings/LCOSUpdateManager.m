@@ -203,6 +203,7 @@ static NSString *const kLCOSUpdateErrorDomain = @"LCOSUpdateError";
 - (BOOL)replaceStagedBinary:(NSString *)staging error:(NSError **)error {
     NSFileManager *fm = NSFileManager.defaultManager;
     NSString *target = [self.pluginDirectory stringByAppendingPathComponent:@"LCOS.dylib"];
+    NSURL *targetURL = [NSURL fileURLWithPath:target];
     NSURL *stagingURL = [NSURL fileURLWithPath:staging];
     NSString *directory = target.stringByDeletingLastPathComponent;
     NSString *backup = [directory stringByAppendingPathComponent:@"LCOS.dylib.backup"];
