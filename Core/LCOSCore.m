@@ -60,6 +60,12 @@
 
 @implementation LCOSPassThroughWindow
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    // Modal controllers presented in this window own their touches. Without
+    // this early return the alert's confirmation button falls through to the
+    // underlying LiveContainer window and can never be tapped.
+    if (self.rootViewController.presentedViewController) {
+        return [super hitTest:point withEvent:event];
+    }
     if (!event || event.type == UIEventTypeTouches) {
         [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSOverlayScreenTouchedNotification" object:nil];
     }
@@ -429,8 +435,14 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: content controller allocation"];
         self.launcherView = [[LCOSLauncherView alloc] init];
     }
-    if (![self.launcherView isKindOfClass:LCOSLauncherView.class] ||
-        ![self.launcherView isKindOfClass:UIViewController.class]) {
+    Class launcherClass = LCOSLauncherView.class;
+    BOOL expectedType = [self.launcherView isKindOfClass:launcherClass];
+    BOOL controllerType = [self.launcherView isKindOfClass:UIViewController.class];
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
+        @"LCOS Launcher: identity actual=%@ expected=%@ matches=%d controller=%d",
+        self.launcherView ? NSStringFromClass([self.launcherView class]) : @"nil",
+        NSStringFromClass(launcherClass), expectedType, controllerType]];
+    if (!expectedType || !controllerType) {
         [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: invalid content controller, creation aborted"];
         self.launcherView = nil;
         self.launcherTransitionActive = NO;
