@@ -142,7 +142,7 @@ static BOOL LCOSIsLiveContainerHost(void) {
 - (UIView *)navigationTouchZone;
 @property (nonatomic, strong) UILongPressGestureRecognizer *overlayLongPressGesture;
 @property (nonatomic, strong) UILongPressGestureRecognizer *launcherLongPressGesture;
-@property (nonatomic, strong) UILongPressGestureRecognizer *nativeDockGesture;
+@property (nonatomic, strong) UIPanGestureRecognizer *nativeDockGesture;
 @property (nonatomic, strong) UIPanGestureRecognizer *launcherDismissGesture;
 @property (nonatomic, weak) UITabBar *nativeDock;
 @property (nonatomic, assign) BOOL dockTransitionActive;
@@ -495,7 +495,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         }];
     }
     
-    self.isLauncherVisible = YES;
+    self.isLauncherVisible = !self.dockTransitionActive;
     
     if (!self.launcherDismissGesture) {
         self.launcherDismissGesture = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handleLauncherDismissGesture:)];
@@ -507,8 +507,9 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 
     self.rightEdgeZone.hidden = YES;
     self.navigationBar.hidden = YES;
-    // Save state
-    [self saveLauncherState];
+    // An interactive Dock presentation is not visible until it completes.
+    // Saving early makes the next upward gesture reject itself.
+    if (self.isLauncherVisible) [self saveLauncherState];
     [self updateInteractionState];
 }
 
@@ -1222,16 +1223,15 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         return;
     }
     self.nativeDock = dock;
-    UILongPressGestureRecognizer *gesture = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleNativeDockGesture:)];
-    gesture.minimumPressDuration = 0.35;
-    gesture.numberOfTouchesRequired = 1;
-    gesture.allowableMovement = CGFLOAT_MAX;
+    UIPanGestureRecognizer *gesture = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handleNativeDockGesture:)];
+    gesture.minimumNumberOfTouches = 1;
+    gesture.maximumNumberOfTouches = 1;
     gesture.cancelsTouchesInView = NO;
     gesture.delegate = self;
     [dock addGestureRecognizer:gesture];
     self.nativeDockGesture = gesture;
     gesture.enabled = !self.isLauncherVisible;
-    [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: native Dock long-press upward gesture installed"];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: native Dock single-finger upward pan installed"];
 }
 
 - (UITabBar *)findTabBarInView:(UIView *)view {
@@ -1253,19 +1253,28 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     return NO;
 }
 
-- (void)handleNativeDockGesture:(UILongPressGestureRecognizer *)gesture {
+- (void)handleNativeDockGesture:(UIPanGestureRecognizer *)gesture {
     if (self.isBackgroundVisible || self.isGuestNavigation || (self.isLauncherVisible && !self.dockTransitionActive)) return;
     CGPoint location = [gesture locationInView:self.overlayWindow];
     if (gesture.state == UIGestureRecognizerStateBegan) {
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS Dock: upward gesture began"];
         if (![self canSwitchShellFromLCOS:NO]) {
+            [[LCOSLogManager sharedManager] forceLog:@"LCOS Dock: blocked by running tasks"];
             gesture.enabled = NO;
             gesture.enabled = YES;
             return;
         }
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS Dock: gate passed, creating launcher"];
         [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSLauncherGestureActive" object:@YES];
         self.dockTransitionActive = YES;
         self.dockGestureStart = location;
         [self prepareLauncherForInteractivePresentation];
+        if (!self.launcherContainer) {
+            self.dockTransitionActive = NO;
+            [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSLauncherGestureActive" object:@NO];
+            [[LCOSLogManager sharedManager] forceLog:@"LCOS Dock: launcher creation failed"];
+            return;
+        }
         self.launcherContainer.view.transform = CGAffineTransformMakeTranslation(0, self.launcherContainer.view.bounds.size.height);
         [self setLauncherRoundedCorners:YES];
     } else if (self.dockTransitionActive && gesture.state == UIGestureRecognizerStateChanged) {
@@ -1364,6 +1373,16 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 
 
 // UIGestureRecognizerDelegate
+- (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer {
+    if (gestureRecognizer == self.nativeDockGesture) {
+        CGPoint velocity = [(UIPanGestureRecognizer *)gestureRecognizer velocityInView:self.nativeDock];
+        BOOL upward = velocity.y < -30 && fabs(velocity.y) > fabs(velocity.x);
+        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Dock: direction accepted=%d", upward]];
+        return upward;
+    }
+    return YES;
+}
+
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSCore: gestureRecognizer shouldReceiveTouch gesture=%@ touchView=%@", gestureRecognizer, touch.view]];
     return YES;
