@@ -9,6 +9,7 @@
 @property (nonatomic, strong, readonly) UIView *cardCanvas;
 @property (nonatomic, strong, readonly) UIVisualEffectView *blurView;
 @property (nonatomic, strong, readonly) UIView *dimView;
+@property (nonatomic, strong, readonly) UIScrollView *scrollView;
 - (void)setLiveTaskViews:(NSArray<UIView *> *)taskViews;
 - (void)setTransitionProgress:(CGFloat)progress;
 - (void)restoreTaskGeometry;
