@@ -423,10 +423,21 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     // Ensure overlay window is visible
     self.overlayWindow.hidden = NO;
     
-    // Create launcher view if needed
+    // Own the content controller before attaching the container. Never pass a
+    // nil or foreign object into UIKit's childViewControllers array.
     if (!self.launcherView) {
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: content controller allocation"];
         self.launcherView = [[LCOSLauncherView alloc] init];
     }
+    if (![self.launcherView isKindOfClass:LCOSLauncherView.class] ||
+        ![self.launcherView isKindOfClass:UIViewController.class]) {
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: invalid content controller, creation aborted"];
+        self.launcherView = nil;
+        self.launcherTransitionActive = NO;
+        [self updateInteractionState];
+        return;
+    }
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: content controller validated"];
     
     // Create container VC if needed
     if (!self.launcherContainer) {
@@ -451,6 +462,13 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     [self setLauncherRoundedCorners:self.dockTransitionActive];
     [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: controllers created"];
     UIViewController *rootController = self.overlayWindow.rootViewController;
+    if (![rootController isKindOfClass:UIViewController.class] ||
+        ![self.launcherContainer isKindOfClass:UIViewController.class] ||
+        self.launcherContainer.parentViewController && self.launcherContainer.parentViewController != rootController) {
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: invalid root or container parent, creation aborted"];
+        [self cancelDockPreparation];
+        return;
+    }
     if (self.launcherContainer.parentViewController != rootController) {
         [rootController addChildViewController:self.launcherContainer];
         [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: container child attached"];
@@ -462,14 +480,26 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     [rootController.view bringSubviewToFront:self.launcherContainer.view];
     [self.launcherContainer didMoveToParentViewController:rootController];
     
-    self.launcherView.view.frame = self.launcherContainer.view.bounds;
-    self.launcherView.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    if (self.launcherView.parentViewController && self.launcherView.parentViewController != self.launcherContainer) {
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: content already belongs to another parent"];
+        [self cancelDockPreparation];
+        return;
+    }
     if (self.launcherView.parentViewController != self.launcherContainer) {
         [self.launcherContainer addChildViewController:self.launcherView];
         [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: content child attached"];
     }
-    if (self.launcherView.view.superview != self.launcherContainer.view) {
-        [self.launcherContainer.view addSubview:self.launcherView.view];
+    UIView *contentView = self.launcherView.view;
+    if (!contentView || self.launcherContainer.view.window == nil) {
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: content view or window unavailable"];
+        [self cancelDockPreparation];
+        return;
+    }
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: content view loaded"];
+    contentView.frame = self.launcherContainer.view.bounds;
+    contentView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    if (contentView.superview != self.launcherContainer.view) {
+        [self.launcherContainer.view addSubview:contentView];
         [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: content view attached"];
     }
     [self.launcherView didMoveToParentViewController:self.launcherContainer];
@@ -548,7 +578,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         [self setLauncherRoundedCorners:NO];
         self.launcherContainer.view.transform = CGAffineTransformIdentity;
         [self.launcherView willMoveToParentViewController:nil];
-        [self.launcherView.view removeFromSuperview];
+        if (self.launcherView.isViewLoaded) [self.launcherView.view removeFromSuperview];
         [self.launcherView removeFromParentViewController];
         
         [self.launcherContainer willMoveToParentViewController:nil];
@@ -829,29 +859,9 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     [self restoreSourceDesktop];
     self.sourceDesktopView = nil;
     if (showLCOS) {
-        if (!self.launcherContainer) [self showLauncher];
-        if (self.launcherContainer) {
-            UIView *root = self.overlayWindow.rootViewController.view;
-            UIView *launcher = self.launcherContainer.view;
-            if (self.launcherContainer.parentViewController != self.overlayWindow.rootViewController)
-                [self.overlayWindow.rootViewController addChildViewController:self.launcherContainer];
-            launcher.frame = root.bounds;
-            launcher.transform = CGAffineTransformIdentity;
-            launcher.alpha = 1;
-            [root addSubview:launcher];
-            [self.launcherContainer didMoveToParentViewController:self.overlayWindow.rootViewController];
-            if (self.launcherView.parentViewController != self.launcherContainer)
-                [self.launcherContainer addChildViewController:self.launcherView];
-            self.launcherView.view.frame = launcher.bounds;
-            [launcher addSubview:self.launcherView.view];
-            [self.launcherView didMoveToParentViewController:self.launcherContainer];
-            ((LCOSPassThroughWindow *)self.overlayWindow).launcherContainer = self.launcherContainer;
-            self.isLauncherVisible = YES;
-            self.launcherTransitionActive = NO;
-            self.overlayLongPressGesture.enabled = NO;
-            [self setLauncherRoundedCorners:NO];
-            [self saveLauncherState];
-        }
+        // Use the single validated mount path; a second manual attachment path
+        // can reinsert an already-owned controller or half-mounted view.
+        [self showLauncherImmediately];
     } else {
         if (self.isLauncherVisible) [self finishHidingLauncher];
         LCOSNativeWindowBeforeTask.userInteractionEnabled = YES;
