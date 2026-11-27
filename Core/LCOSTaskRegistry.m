@@ -5,6 +5,9 @@
 
 @interface LCOSTaskRecord : NSObject
 @property (nonatomic, weak) UIView *view;
+// A verified controller owns the task lifetime. The view's private delegate
+// can temporarily disappear during scene/layout transitions.
+@property (nonatomic, strong) UIViewController *controller;
 @property (nonatomic, assign) BOOL fromLCOS;
 @property (nonatomic, copy) NSString *uuid;
 @end
@@ -13,8 +16,10 @@
 
 static void (*orig_addRunningApp)(id, SEL, NSString *, NSString *, UIView *);
 static void (*orig_removeRunningApp)(id, SEL, NSString *);
+static void (*orig_appDidExit)(id, SEL, id);
 static void LCOSAddRunningApp(id self, SEL _cmd, NSString *name, NSString *uuid, UIView *view);
 static void LCOSRemoveRunningApp(id self, SEL _cmd, NSString *uuid);
+static void LCOSAppDidExit(id self, SEL _cmd, id scene);
 
 @interface LCOSTaskRegistry ()
 @property (nonatomic, strong) NSMutableArray<LCOSTaskRecord *> *records;
@@ -73,6 +78,15 @@ static Class LCOSSwiftClass(NSString *name) {
                 method_setImplementation(remove, (IMP)LCOSRemoveRunningApp);
             }
         }
+        Class decorated = LCOSSwiftClass(@"DecoratedAppSceneViewController");
+        Method exit = class_getInstanceMethod(decorated, @selector(appSceneVCAppDidExit:));
+        if (exit) {
+            NSMethodSignature *signature = [NSMethodSignature signatureWithObjCTypes:method_getTypeEncoding(exit)];
+            if (signature.numberOfArguments == 3 && signature.methodReturnType[0] == 'v') {
+                orig_appDidExit = (void *)method_getImplementation(exit);
+                method_setImplementation(exit, (IMP)LCOSAppDidExit);
+            }
+        }
         self.hooksInstalled = YES;
         [[LCOSLogManager sharedManager] forceLog:@"LCOS Task: verified runtime hooks installed"];
     } @catch (NSException *exception) {
@@ -97,8 +111,17 @@ static void LCOSRemoveRunningApp(id self, SEL _cmd, NSString *uuid) {
     [[LCOSTaskRegistry shared] unregisterTaskWithUUID:uuid];
 }
 
+static void LCOSAppDidExit(id self, SEL _cmd, id scene) {
+    // This callback is the verified lifecycle exit, unlike a missing private
+    // view delegate during a transition.
+    [[LCOSTaskRegistry shared] unregisterTaskWithController:self];
+    if (orig_appDidExit) orig_appDidExit(self, _cmd, scene);
+}
+
 - (id)controllerForTask:(UIView *)view {
     if (![view isKindOfClass:UIView.class]) return nil;
+    LCOSTaskRecord *record = [self recordForTask:view];
+    if (record.controller) return record.controller;
     Class decorated = NSClassFromString(@"DecoratedAppSceneViewController");
     SEL delegate = NSSelectorFromString(@"_viewDelegate");
     if ([view respondsToSelector:delegate]) {
@@ -113,15 +136,28 @@ static void LCOSRemoveRunningApp(id self, SEL _cmd, NSString *uuid) {
     return nil;
 }
 
-- (BOOL)isRunning:(UIView *)view {
+- (id)sceneForRecord:(LCOSTaskRecord *)record {
+    UIViewController *controller = record.controller;
+    SEL sceneSelector = NSSelectorFromString(@"appSceneVC");
+    if (![controller respondsToSelector:sceneSelector]) return nil;
     @try {
-        id controller = [self controllerForTask:view];
-        SEL sceneSelector = NSSelectorFromString(@"appSceneVC");
-        if (![controller respondsToSelector:sceneSelector]) return NO;
-        id scene = ((id (*)(id, SEL))objc_msgSend)(controller, sceneSelector);
-        SEL running = NSSelectorFromString(@"isAppRunning");
-        return scene && [scene respondsToSelector:running] && ((BOOL (*)(id, SEL))objc_msgSend)(scene, running);
+        return ((id (*)(id, SEL))objc_msgSend)(controller, sceneSelector);
     } @catch (NSException *exception) {
+        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Task: scene temporarily unavailable %@", record.uuid ?: @"pending"]];
+        return nil;
+    }
+}
+
+- (BOOL)isRunning:(UIView *)view {
+    LCOSTaskRecord *record = [self recordForTask:view];
+    if (!record) return NO;
+    id scene = [self sceneForRecord:record];
+    SEL running = NSSelectorFromString(@"isAppRunning");
+    if (![scene respondsToSelector:running]) return NO;
+    @try {
+        return ((BOOL (*)(id, SEL))objc_msgSend)(scene, running);
+    } @catch (NSException *exception) {
+        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Task: running check unavailable %@", record.uuid ?: @"pending"]];
         return NO;
     }
 }
@@ -148,11 +184,21 @@ static void LCOSRemoveRunningApp(id self, SEL _cmd, NSString *uuid) {
         existing.fromLCOS = fromLCOS;
         [self.records addObject:existing];
     }
+    existing.controller = controller;
+    SEL uuidSelector = NSSelectorFromString(@"dataUUID");
+    if ([controller respondsToSelector:uuidSelector]) {
+        @try {
+            id uuid = ((id (*)(id, SEL))objc_msgSend)(controller, uuidSelector);
+            if ([uuid isKindOfClass:NSString.class]) existing.uuid = uuid;
+        } @catch (NSException *exception) {
+            [[LCOSLogManager sharedManager] forceLog:@"LCOS Task: UUID temporarily unavailable"];
+        }
+    }
     [self activateTask:view fromLCOS:fromLCOS];
     [self presentTaskWhenReady:view fromLCOS:fromLCOS attempt:0];
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
-        @"LCOS Task: verified %@ controller=%@ in %@", view.class, [controller class],
-        fromLCOS ? @"LCOSShell" : @"NativeShell"]];
+        @"LCOS Task: verified %@ controller=%@ UUID=%@ in %@", view.class, [controller class],
+        existing.uuid ?: @"pending", fromLCOS ? @"LCOSShell" : @"NativeShell"]];
     return YES;
 }
 
@@ -195,11 +241,22 @@ static void LCOSRemoveRunningApp(id self, SEL _cmd, NSString *uuid) {
 }
 
 - (void)unregisterTaskWithUUID:(NSString *)uuid {
+    if (![uuid isKindOfClass:NSString.class]) return;
     for (LCOSTaskRecord *record in [self.records copy]) {
-        id controller = [self controllerForTask:record.view];
-        if (![controller respondsToSelector:NSSelectorFromString(@"dataUUID")]) continue;
-        NSString *candidate = ((id (*)(id, SEL))objc_msgSend)(controller, NSSelectorFromString(@"dataUUID"));
-        if ([candidate isEqualToString:uuid]) [self unregisterTask:record.view];
+        if ([record.uuid isEqualToString:uuid]) {
+            [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Task: explicit host removal %@", uuid]];
+            [self unregisterTask:record.view];
+        }
+    }
+}
+
+- (void)unregisterTaskWithController:(UIViewController *)controller {
+    if (!controller) return;
+    for (LCOSTaskRecord *record in [self.records copy]) {
+        if (record.controller == controller) {
+            [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Task: verified exit callback UUID=%@", record.uuid ?: @"pending"]];
+            [self unregisterTask:record.view];
+        }
     }
 }
 
@@ -214,11 +271,23 @@ static void LCOSRemoveRunningApp(id self, SEL _cmd, NSString *uuid) {
 
 - (NSArray<UIView *> *)runningTasksFromLCOS:(BOOL)fromLCOS {
     NSMutableArray<UIView *> *tasks = [NSMutableArray array];
+    NSUInteger retained = 0;
     for (LCOSTaskRecord *record in [self.records copy]) {
+        if (record.fromLCOS != fromLCOS) continue;
+        retained++;
         UIView *view = record.view;
-        if (!view || ![self controllerForTask:view]) { [self unregisterTask:view]; continue; }
-        if (record.fromLCOS == fromLCOS && [self isRunning:view]) [tasks addObject:view];
+        if (!view) {
+            [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Task: view unavailable, record retained UUID=%@", record.uuid ?: @"pending"]];
+            continue;
+        }
+        if (!record.controller) {
+            [[LCOSLogManager sharedManager] forceLog:@"LCOS Task: controller unavailable, record retained"];
+            continue;
+        }
+        if ([self isRunning:view]) [tasks addObject:view];
+        else [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Task: not running yet, record retained UUID=%@", record.uuid ?: @"pending"]];
     }
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Task: query %@ retained=%lu running=%lu", fromLCOS ? @"LCOSShell" : @"NativeShell", (unsigned long)retained, (unsigned long)tasks.count]];
     return tasks;
 }
 
