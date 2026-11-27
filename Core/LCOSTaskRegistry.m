@@ -87,8 +87,8 @@ static void LCOSAddRunningApp(id self, SEL _cmd, NSString *name, NSString *uuid,
     if ([shared respondsToSelector:NSSelectorFromString(@"isLauncherVisible")])
         fromLCOS = ((BOOL (*)(id, SEL))objc_msgSend)(shared, NSSelectorFromString(@"isLauncherVisible"));
     [[LCOSTaskRegistry shared] registerTask:view fromLCOS:fromLCOS];
-    NSString *name = fromLCOS ? @"lcosShell" : @"nativeShell";
-    id controller = ((id (*)(id, SEL))objc_msgSend)(shared, NSSelectorFromString(name.UTF8String));
+    NSString *shellName = fromLCOS ? @"lcosShell" : @"nativeShell";
+    id controller = ((id (*)(id, SEL))objc_msgSend)(shared, NSSelectorFromString(shellName));
     if ([controller respondsToSelector:@selector(presentTask:)])
         ((void (*)(id, SEL, UIView *))objc_msgSend)(controller, @selector(presentTask:), view);
 }
