@@ -1,4 +1,4 @@
-name: Apply single-file patch from Issue
+name: Apply local code replacement from Issue
 
 on:
   issues:
@@ -15,7 +15,6 @@ concurrency:
 
 jobs:
   apply-patch:
-    # Only the repository owner can trigger this workflow.
     if: >
       github.event.issue.user.login == 'LTYOS' &&
       github.event.sender.login == 'LTYOS' &&
@@ -35,14 +34,13 @@ jobs:
         run: |
           printf '%s' "$ISSUE_BODY" > issue-body.md
 
-      - name: Parse Issue and write target file
+      - name: Apply exact one-time replacement
         id: patch
         shell: bash
         run: |
           set -euo pipefail
 
           python3 - <<'PY'
-          import json
           import os
           import pathlib
           import re
@@ -54,16 +52,21 @@ jobs:
               r"(?m)^LCOS-FILE:[ \t]*([^\r\n]+?)[ \t]*$",
               body,
           )
-          content_match = re.search(
-              r"(?ms)^LCOS-CONTENT:[ \t]*\r?\n```[^\r\n]*\r?\n"
+          old_match = re.search(
+              r"(?ms)^LCOS-OLD:[ \t]*\r?\n```[^\r\n]*\r?\n"
+              r"(.*?)\r?\n```[ \t]*\r?\n(?=LCOS-NEW:)",
+              body,
+          )
+          new_match = re.search(
+              r"(?ms)^LCOS-NEW:[ \t]*\r?\n```[^\r\n]*\r?\n"
               r"(.*?)\r?\n```[ \t]*\r?\n?LCOS-END:[ \t]*$",
               body,
           )
 
-          if not path_match or not content_match:
+          if not path_match or not old_match or not new_match:
               print(
-                  "Invalid Issue format. Required: LCOS-FILE, "
-                  "LCOS-CONTENT, fenced code block, and LCOS-END.",
+                  "Required format: LCOS-FILE, LCOS-OLD, "
+                  "LCOS-NEW, and LCOS-END.",
                   file=sys.stderr,
               )
               sys.exit(1)
@@ -77,33 +80,39 @@ jobs:
               or "\\" in relative_path
               or "\x00" in relative_path
               or any(part in ("", ".", "..") for part in target.parts)
-              or relative_path.startswith(".git/")
               or relative_path == ".git"
+              or relative_path.startswith(".git/")
           ):
               print(f"Unsafe target path: {relative_path}", file=sys.stderr)
               sys.exit(1)
 
-          # These release files must be prepared explicitly in the same patch.
-          if relative_path == "RELEASE_VERSION":
+          destination = pathlib.Path.cwd().joinpath(*target.parts)
+          if not destination.is_file():
+              print(f"Target file does not exist: {relative_path}", file=sys.stderr)
+              sys.exit(1)
+
+          source = destination.read_text(encoding="utf-8")
+          old_code = old_match.group(1)
+          new_code = new_match.group(1)
+          occurrences = source.count(old_code)
+
+          if occurrences != 1:
               print(
-                  "Do not use an Issue patch to change RELEASE_VERSION alone.",
+                  f"Expected exactly one old-code match; found {occurrences}. "
+                  "Add more surrounding context to make it unique.",
                   file=sys.stderr,
               )
               sys.exit(1)
 
-          destination = pathlib.Path.cwd().joinpath(*target.parts)
-          destination.parent.mkdir(parents=True, exist_ok=True)
-          destination.write_text(
-              content_match.group(1) + "\n",
-              encoding="utf-8",
-          )
+          updated = source.replace(old_code, new_code, 1)
+          destination.write_text(updated, encoding="utf-8")
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"path={relative_path}\n")
           PY
 
           if git diff --quiet -- "${{ steps.patch.outputs.path }}"; then
-            echo "Issue content is identical to main; no commit needed."
+            echo "Replacement produced no change."
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -148,10 +157,11 @@ jobs:
           set -euo pipefail
 
           cat > pr-body.md <<EOF
-          自动应用 Issue #${{ github.event.issue.number }} 提供的完整文件内容。
+          自动应用 Issue #${{ github.event.issue.number }} 的局部代码替换。
 
           - 文件：\`$TARGET_PATH\`
           - 来源：${{ github.event.issue.html_url }}
+          - 旧代码必须且只能匹配一次，否则不会提交。
           - 请人工 Review 后再合并。
           EOF
 
@@ -172,4 +182,4 @@ jobs:
         run: |
           gh issue comment "${{ github.event.issue.number }}" \
             --repo "${{ github.repository }}" \
-            --body "已创建补丁 PR，请 Review 后合并：$PR_URL"
+            --body "已创建局部替换 PR，请 Review 后合并：$PR_URL"
