@@ -4,6 +4,7 @@
 #import "LCOSNavigationBar.h"
 #import "LCOSLogManager.h"
 #import "LCOSPassThroughWindow.h"
+#import <objc/message.h>
 
 @interface LCOSEdgeZone : UIView <UIGestureRecognizerDelegate>
 @property (nonatomic, copy) void (^onPan)(UIPanGestureRecognizer *gesture);
@@ -141,6 +142,8 @@
     self.activeTask = task;
     self.hasActiveTask = YES;
     [self.tasks activateTask:task fromLCOS:self.fromLCOS];
+    [task.layer removeAllAnimations];
+    task.transform = [self baseTaskTransform];
     task.hidden = NO;
     task.alpha = 1;
     task.userInteractionEnabled = YES;
@@ -156,22 +159,30 @@
         [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"%@: no verified active task for transition", self.name]];
         return;
     }
-    // Keep the real view in its original window. Reparenting it into the
-    // overlay loses the controller's presentation context and prevents both
-    // home restoration and the switcher's original-parent recovery.
+    [task.layer removeAllAnimations];
     self.taskStage = task.superview;
-    self.taskState = [@{@"transform": [NSValue valueWithCGAffineTransform:task.transform],
-        @"center": [NSValue valueWithCGPoint:task.center], @"frame": [NSValue valueWithCGRect:task.frame],
+    self.taskState = [@{@"center": [NSValue valueWithCGPoint:task.center], @"frame": [NSValue valueWithCGRect:task.frame],
         @"alpha": @(task.alpha), @"hidden": @(task.hidden), @"radius": @(task.layer.cornerRadius),
         @"interaction": @(task.userInteractionEnabled)} mutableCopy];
     task.userInteractionEnabled = NO;
+}
+
+- (CGAffineTransform)baseTaskTransform {
+    id controller = [self.tasks controllerForTask:self.activeTask];
+    SEL selector = NSSelectorFromString(@"scaleRatio");
+    CGFloat scale = 1;
+    if ([controller respondsToSelector:selector]) {
+        scale = ((CGFloat (*)(id, SEL))objc_msgSend)(controller, selector);
+    }
+    if (!isfinite(scale) || scale <= 0) scale = 1;
+    return CGAffineTransformMakeScale(scale, scale);
 }
 
 - (void)restoreTaskStage {
     UIView *task = self.activeTask;
     if (task && self.taskState) {
         task.frame = [self.taskState[@"frame"] CGRectValue];
-        task.transform = [self.taskState[@"transform"] CGAffineTransformValue];
+        task.transform = [self baseTaskTransform];
         task.center = [self.taskState[@"center"] CGPointValue];
         task.alpha = [self.taskState[@"alpha"] doubleValue];
         task.hidden = [self.taskState[@"hidden"] boolValue];
@@ -227,8 +238,7 @@
 - (void)updateInteractiveProgress {
     if (!self.taskState || !self.activeTask) return;
     CGFloat progress = MIN(1, MAX(0, self.travel / MAX(80, self.overlay.bounds.size.width * 0.42)));
-    CGAffineTransform original = [self.taskState[@"transform"] CGAffineTransformValue];
-    self.activeTask.transform = CGAffineTransformConcat(original, CGAffineTransformMakeScale(1 - 0.22 * progress, 1 - 0.22 * progress));
+    self.activeTask.transform = CGAffineTransformMakeScale(1 - 0.22 * progress, 1 - 0.22 * progress);
     self.activeTask.alpha = 1 - 0.65 * progress;
     self.activeTask.layer.cornerRadius = 60 * progress;
     self.activeTask.layer.masksToBounds = YES;
@@ -243,7 +253,7 @@
         } completion:^(BOOL finished) { [self returnHome]; }];
         return;
     }
-    CGAffineTransform original = self.taskState ? [self.taskState[@"transform"] CGAffineTransformValue] : CGAffineTransformIdentity;
+    CGAffineTransform original = [self baseTaskTransform];
     CGFloat originalAlpha = self.taskState ? [self.taskState[@"alpha"] doubleValue] : 1;
     CGFloat originalRadius = self.taskState ? [self.taskState[@"radius"] doubleValue] : 0;
     [UIView animateWithDuration:0.20 animations:^{
@@ -262,22 +272,17 @@
         [self resetTransition];
         return;
     }
+    UIView *returningTask = self.activeTask;
     [self restoreTaskStage];
     for (UIView *task in [self.tasks runningTasksFromLCOS:self.fromLCOS]) {
+        if (task == returningTask) task.transform = CGAffineTransformIdentity;
         task.hidden = YES;
         task.alpha = 0;
         task.userInteractionEnabled = NO;
     }
     self.activeTask = nil;
     self.hasActiveTask = NO;
-    if (self.fromLCOS) {
-        if (self.launcherView) {
-            self.launcherView.hidden = NO;
-            self.launcherView.alpha = 1;
-        }
-    } else {
-        [self restoreNativeWindowInteraction];
-    }
+    [self restoreNativeWindowInteraction];
     [self resetTransition];
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"%@: returned home, tasks hidden", self.name]];
 }
@@ -318,6 +323,7 @@
 - (void)showBackground {
     if (self.isBackgroundVisible) return;
     self.isBackgroundVisible = YES;
+    UIView *presentedTask = self.activeTask;
     [self restoreTaskStage];
     self.switcher = [[LCOSBackgroundView alloc] initWithFrame:self.root.bounds];
     self.switcher.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -342,7 +348,8 @@
         [weakSelf presentTask:task];
         [weakSelf resetTransition];
     };
-    NSArray<UIView *> *tasks = [self.tasks runningTasksFromLCOS:self.fromLCOS];
+    NSMutableArray<UIView *> *tasks = [[self.tasks runningTasksFromLCOS:self.fromLCOS] mutableCopy];
+    if (presentedTask && ![tasks containsObject:presentedTask]) [tasks addObject:presentedTask];
     [self.switcher setLiveTaskViews:tasks];
     [self.switcher setTransitionProgress:1];
     [self.switcher setBackdropActive:YES];
@@ -360,20 +367,13 @@
 }
 
 - (void)restoreNativeWindowInteraction {
-    for (UIWindow *window in self.overlay.windowScene.windows.reverseObjectEnumerator) {
-        if (window == self.overlay || window.hidden || window.alpha < 0.01) continue;
-        window.userInteractionEnabled = YES;
-        [window makeKeyAndVisible];
-        return;
-    }
-    // A host window may have been hidden by its own task presentation path.
-    for (UIWindow *window in self.overlay.windowScene.windows) {
-        if (window == self.overlay) continue;
+    // Keep the real host window in place. Choosing an arbitrary visible window
+    // and making it key can reorder LiveContainer's task and desktop layers.
+    UIWindow *window = self.overlay.windowScene.windows.firstObject;
+    if (window && window != self.overlay) {
         window.hidden = NO;
         window.alpha = 1;
         window.userInteractionEnabled = YES;
-        [window makeKeyAndVisible];
-        return;
     }
 }
 
@@ -386,12 +386,7 @@
     self.switcher = nil;
     _backgroundView = nil;
     ((LCOSPassThroughWindow *)self.overlay).backgroundView = nil;
-    if (self.fromLCOS) {
-        self.launcherView.hidden = NO;
-        self.launcherView.alpha = 1;
-    } else {
-        [self restoreNativeWindowInteraction];
-    }
+    [self restoreNativeWindowInteraction];
     for (UIView *task in [self.tasks runningTasksFromLCOS:self.fromLCOS]) {
         task.hidden = YES;
         task.alpha = 0;

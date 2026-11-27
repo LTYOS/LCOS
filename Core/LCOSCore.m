@@ -153,7 +153,6 @@ static BOOL LCOSIsLiveContainerHost(void) {
 @property (nonatomic, strong) LCOSNavigationTouchZone *rightEdgeZone;
 @property (nonatomic, assign) BOOL isBackgroundVisible;
 @property (nonatomic, assign) BOOL isGuestNavigation;
-@property (nonatomic, assign) BOOL launcherPreloading;
 @end
 
 // Hook UIWindow.makeKeyAndVisible: as soon as LiveContainer's native window
@@ -412,11 +411,11 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 
 - (void)showLauncher {
     if (!self.isGuestNavigation && !self.isLauncherVisible && ![self canSwitchShellFromLCOS:NO]) return;
-    if (self.isLauncherVisible || self.launcherPreloading || self.isBackgroundVisible ||
+    if (self.isLauncherVisible || self.isBackgroundVisible ||
         (self.launcherTransitionActive && !self.dockTransitionActive)) return;
     if (!self.isLauncherVisible) self.launcherTransitionActive = YES;
     
-    [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: showLauncher"];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: creation started"];
     
     // Ensure overlay window is visible
     self.overlayWindow.hidden = NO;
@@ -447,6 +446,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     }
     
     [self setLauncherRoundedCorners:self.dockTransitionActive];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: controllers created"];
     // Add launcher as child view controller (for proper safeAreaLayoutGuide)
     // Add launcherContainer to rootVC view
     [self.overlayWindow.rootViewController addChildViewController:self.launcherContainer];
@@ -459,6 +459,8 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     [self.launcherContainer addChildViewController:self.launcherView];
     [self.launcherContainer.view addSubview:self.launcherView.view];
     [self.launcherView didMoveToParentViewController:self.launcherContainer];
+    [self.lcosShell setLauncherView:self.launcherContainer.view];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: controllers mounted"];
     
     // Set launcherContainer on pass-through window for touch handling
     if ([self.overlayWindow isKindOfClass:[LCOSPassThroughWindow class]]) {
@@ -511,6 +513,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     // Saving early makes the next upward gesture reject itself.
     if (self.isLauncherVisible) [self saveLauncherState];
     [self updateInteractionState];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: presentation mounted"];
 }
 
 - (void)hideLauncher {
@@ -1192,10 +1195,8 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 }
 
 - (void)showLauncherForDockInteraction {
-    if (self.launcherPreloading) return;
-    self.launcherPreloading = YES;
-    @try { [self showLauncher]; }
-    @finally { self.launcherPreloading = NO; }
+    // dockTransitionActive is the sole reentry guard for Dock presentation.
+    [self showLauncher];
 }
 
 - (void)showSettings {
@@ -1326,6 +1327,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         [self saveLauncherState];
         [NSUserDefaults.standardUserDefaults setBool:YES forKey:kLCOSLauncherVisibleKey];
         [self updateInteractionState];
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: Dock presentation completed"];
     }];
 }
 
