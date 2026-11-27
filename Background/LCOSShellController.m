@@ -49,7 +49,7 @@
 @property (nonatomic, strong) UIView *taskStage;
 @property (nonatomic, weak) UIView *activeTask;
 @property (nonatomic, strong) LCOSBackgroundView *switcher;
-@property (nonatomic, strong) UIVisualEffectView *hostBlurView;
+@property (nonatomic, strong) NSMutableArray<UIVisualEffectView *> *hostBlurViews;
 @property (nonatomic, strong) NSTimer *dwellTimer;
 @property (nonatomic, assign) BOOL transitionActive;
 @property (nonatomic, assign) BOOL launchingBackground;
@@ -273,7 +273,6 @@
     UIView *returningTask = self.activeTask;
     [self restoreTaskStage];
     for (UIView *task in [self.tasks runningTasksFromLCOS:self.fromLCOS]) {
-        if (task == returningTask) task.transform = CGAffineTransformIdentity;
         task.hidden = YES;
         task.alpha = 0;
         task.userInteractionEnabled = NO;
@@ -322,7 +321,9 @@
     if (self.isBackgroundVisible) return;
     self.isBackgroundVisible = YES;
     UIView *presentedTask = self.activeTask;
-    [self cancelTransition];
+    // Save the current transition baseline before removing taskState. Returning
+    // from a card later restores this geometry, not a previous hidden frame.
+    [self restoreTaskStage];
     self.switcher = [[LCOSBackgroundView alloc] initWithFrame:self.root.bounds];
     self.switcher.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     self.switcher.backgroundColor = self.fromLCOS ? UIColor.clearColor : [UIColor colorWithWhite:0.10 alpha:0.35];
@@ -342,29 +343,38 @@
         weakSelf.switcher = nil;
         weakSelf.backgroundView = nil;
         ((LCOSPassThroughWindow *)weakSelf.overlay).backgroundView = nil;
-        [weakSelf.hostBlurView removeFromSuperview];
-        weakSelf.hostBlurView = nil;
+        for (UIVisualEffectView *blur in weakSelf.hostBlurViews) [blur removeFromSuperview];
+        [weakSelf.hostBlurViews removeAllObjects];
         weakSelf.hasActiveTask = YES;
         [weakSelf presentTask:task];
         [weakSelf resetTransition];
     };
     NSMutableArray<UIView *> *tasks = [[self.tasks runningTasksFromLCOS:self.fromLCOS] mutableCopy];
-    if (presentedTask && ![tasks containsObject:presentedTask]) [tasks addObject:presentedTask];
+    if (presentedTask && [self.tasks isTaskRunning:presentedTask] && ![tasks containsObject:presentedTask]) [tasks addObject:presentedTask];
     [self.switcher setLiveTaskViews:tasks];
-    [self.switcher setTransitionProgress:1];
     UIView *host = presentedTask.superview;
     [self.switcher setBackdropActive:!host];
-    if (host && presentedTask) {
-        self.hostBlurView = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark]];
-        self.hostBlurView.frame = host.bounds;
-        self.hostBlurView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-        self.hostBlurView.userInteractionEnabled = NO;
-        [host insertSubview:self.hostBlurView belowSubview:presentedTask];
-        [host bringSubviewToFront:presentedTask];
+    self.hostBlurViews = [NSMutableArray array];
+    NSMutableArray<UIView *> *hosts = [NSMutableArray array];
+    for (UIView *task in self.switcher.taskViews) {
+        UIView *taskHost = task.superview;
+        if (!taskHost || [hosts containsObject:taskHost]) continue;
+        [hosts addObject:taskHost];
+        UIVisualEffectView *blur = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark]];
+        blur.frame = taskHost.bounds;
+        blur.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        blur.userInteractionEnabled = NO;
+        [taskHost insertSubview:blur belowSubview:task];
+        [self.hostBlurViews addObject:blur];
     }
+    // Bring every card above the single backdrop in each host, not just the
+    // last presented application.
+    for (UIView *task in self.switcher.taskViews) [task.superview bringSubviewToFront:task];
     [self.root addSubview:self.switcher];
     [self.switcher setNeedsLayout];
     [self.switcher layoutIfNeeded];
+    [self.switcher setTransitionProgress:1];
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"%@: switcher placements=%lu cards=%lu", self.name, (unsigned long)self.switcher.placementCount, (unsigned long)self.switcher.cardCount]];
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"%@: switcher tasks=%lu content=%@ frame=%@ host=%@", self.name, (unsigned long)self.switcher.taskViews.count, NSStringFromCGSize(self.switcher.scrollView.contentSize), NSStringFromCGRect(self.switcher.scrollView.frame), host ?: self.root]];
     _backgroundView = self.switcher;
     ((LCOSPassThroughWindow *)self.overlay).backgroundView = self.switcher;
@@ -393,8 +403,8 @@
     [switcher restoreTaskGeometry];
     [switcher removeFromSuperview];
     self.switcher = nil;
-    [self.hostBlurView removeFromSuperview];
-    self.hostBlurView = nil;
+    for (UIVisualEffectView *blur in self.hostBlurViews) [blur removeFromSuperview];
+    [self.hostBlurViews removeAllObjects];
     _backgroundView = nil;
     ((LCOSPassThroughWindow *)self.overlay).backgroundView = nil;
     [self restoreNativeWindowInteraction];
