@@ -146,6 +146,9 @@ static BOOL LCOSIsLiveContainerHost(void) {
 @property (nonatomic, strong) UIPanGestureRecognizer *launcherDismissGesture;
 @property (nonatomic, weak) UITabBar *nativeDock;
 @property (nonatomic, assign) BOOL dockTransitionActive;
+@property (nonatomic, assign) BOOL dockPreparingLauncher;
+@property (nonatomic, assign) BOOL dockEndedWhilePreparing;
+@property (nonatomic, assign) BOOL dockShouldOpenAfterPreparing;
 @property (nonatomic, assign) BOOL launcherTransitionActive;
 @property (nonatomic, assign) CGPoint dockGestureStart;
 @property (nonatomic, strong) LCOSNavigationBar *navigationBar;
@@ -447,17 +450,28 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     
     [self setLauncherRoundedCorners:self.dockTransitionActive];
     [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: controllers created"];
-    // Add launcher as child view controller (for proper safeAreaLayoutGuide)
-    // Add launcherContainer to rootVC view
-    [self.overlayWindow.rootViewController addChildViewController:self.launcherContainer];
-    [self.overlayWindow.rootViewController.view addSubview:self.launcherContainer.view];
-    [self.overlayWindow.rootViewController.view bringSubviewToFront:self.launcherContainer.view];
+    UIViewController *rootController = self.overlayWindow.rootViewController;
+    if (self.launcherContainer.parentViewController != rootController) {
+        [rootController addChildViewController:self.launcherContainer];
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: container child attached"];
+    }
+    if (self.launcherContainer.view.superview != rootController.view) {
+        [rootController.view addSubview:self.launcherContainer.view];
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: container view attached"];
+    }
+    [rootController.view bringSubviewToFront:self.launcherContainer.view];
+    [self.launcherContainer didMoveToParentViewController:rootController];
     
-    // Add launcher view to container
     self.launcherView.view.frame = self.launcherContainer.view.bounds;
     self.launcherView.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    [self.launcherContainer addChildViewController:self.launcherView];
-    [self.launcherContainer.view addSubview:self.launcherView.view];
+    if (self.launcherView.parentViewController != self.launcherContainer) {
+        [self.launcherContainer addChildViewController:self.launcherView];
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: content child attached"];
+    }
+    if (self.launcherView.view.superview != self.launcherContainer.view) {
+        [self.launcherContainer.view addSubview:self.launcherView.view];
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: content view attached"];
+    }
     [self.launcherView didMoveToParentViewController:self.launcherContainer];
     [self.lcosShell setLauncherView:self.launcherContainer.view];
     [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: controllers mounted"];
@@ -1270,34 +1284,15 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         self.dockTransitionActive = YES;
         self.dockGestureStart = location;
         [self prepareLauncherForInteractivePresentation];
-        if (!self.launcherContainer) {
-            self.dockTransitionActive = NO;
-            [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSLauncherGestureActive" object:@NO];
-            [[LCOSLogManager sharedManager] forceLog:@"LCOS Dock: launcher creation failed"];
-            return;
-        }
-        self.launcherContainer.view.transform = CGAffineTransformMakeTranslation(0, self.launcherContainer.view.bounds.size.height);
-        [self setLauncherRoundedCorners:YES];
     } else if (self.dockTransitionActive && gesture.state == UIGestureRecognizerStateChanged) {
+        if (self.dockPreparingLauncher || !self.launcherContainer) return;
         CGFloat upward = MAX(0.0, self.dockGestureStart.y - location.y);
         CGFloat height = self.launcherContainer.view.bounds.size.height;
         self.launcherContainer.view.transform = CGAffineTransformMakeTranslation(0, MAX(0.0, height - upward));
     } else if (self.dockTransitionActive && (gesture.state == UIGestureRecognizerStateEnded || gesture.state == UIGestureRecognizerStateCancelled || gesture.state == UIGestureRecognizerStateFailed)) {
         CGFloat upward = MAX(0.0, self.dockGestureStart.y - location.y);
-        BOOL shouldOpen = gesture.state == UIGestureRecognizerStateEnded && upward > self.launcherContainer.view.bounds.size.height * 0.18;
-        self.dockTransitionActive = NO;
-        [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSLauncherGestureActive" object:@NO];
-        if (shouldOpen) {
-            [self finishInteractivePresentation];
-        } else {
-            self.isLauncherVisible = NO;
-            self.launcherTransitionActive = YES;
-            [UIView animateWithDuration:0.2 animations:^{
-                self.launcherContainer.view.transform = CGAffineTransformMakeTranslation(0, self.launcherContainer.view.bounds.size.height);
-            } completion:^(BOOL finished) {
-                [self finishHidingLauncher];
-            }];
-        }
+        BOOL shouldOpen = gesture.state == UIGestureRecognizerStateEnded && upward > self.overlayWindow.bounds.size.height * 0.18;
+        [self completeDockPresentation:shouldOpen];
     }
 }
 
@@ -1310,10 +1305,70 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 }
 
 - (void)prepareLauncherForInteractivePresentation {
-    [self showLauncherForDockInteraction];
-    if (!self.launcherContainer) { self.dockTransitionActive = NO; return; }
-    [self.launcherContainer.view.layer removeAllAnimations];
-    self.launcherTransitionActive = YES;
+    if (self.dockPreparingLauncher) return;
+    self.dockPreparingLauncher = YES;
+    self.dockEndedWhilePreparing = NO;
+    // Do not create and attach the entire controller tree inside a gesture
+    // callback. UIKit can otherwise lay out a half-attached desktop.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!self.dockTransitionActive) {
+            self.dockPreparingLauncher = NO;
+            return;
+        }
+        @try {
+            [self showLauncherForDockInteraction];
+            if (!self.launcherContainer || !self.launcherView.viewIfLoaded.window) {
+                [[LCOSLogManager sharedManager] forceLog:@"LCOS Dock: launcher not attached"];
+                [self cancelDockPreparation];
+                return;
+            }
+            [self.launcherContainer.view setNeedsLayout];
+            [self.launcherContainer.view layoutIfNeeded];
+            [self.launcherContainer.view.layer removeAllAnimations];
+            self.launcherTransitionActive = YES;
+            self.dockPreparingLauncher = NO;
+            CGFloat upward = MAX(0, self.dockGestureStart.y - [self.nativeDockGesture locationInView:self.overlayWindow].y);
+            self.launcherContainer.view.transform = CGAffineTransformMakeTranslation(0, MAX(0, self.launcherContainer.view.bounds.size.height - upward));
+            [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: first layout completed"];
+            if (self.dockEndedWhilePreparing) {
+                self.dockEndedWhilePreparing = NO;
+                [self completeDockPresentation:self.dockShouldOpenAfterPreparing];
+            }
+        } @catch (NSException *exception) {
+            [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Dock: preparation exception %@ %@", exception.name, exception.reason]];
+            [self cancelDockPreparation];
+        }
+    });
+}
+
+- (void)cancelDockPreparation {
+    self.dockPreparingLauncher = NO;
+    self.dockEndedWhilePreparing = NO;
+    self.dockTransitionActive = NO;
+    self.launcherTransitionActive = NO;
+    self.isLauncherVisible = NO;
+    [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSLauncherGestureActive" object:@NO];
+    if (self.launcherContainer) [self finishHidingLauncher];
+    [self updateInteractionState];
+}
+
+- (void)completeDockPresentation:(BOOL)shouldOpen {
+    if (self.dockPreparingLauncher) {
+        self.dockEndedWhilePreparing = YES;
+        self.dockShouldOpenAfterPreparing = shouldOpen;
+        return;
+    }
+    self.dockTransitionActive = NO;
+    [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSLauncherGestureActive" object:@NO];
+    if (shouldOpen) {
+        [self finishInteractivePresentation];
+    } else {
+        self.isLauncherVisible = NO;
+        self.launcherTransitionActive = YES;
+        [UIView animateWithDuration:0.2 animations:^{
+            self.launcherContainer.view.transform = CGAffineTransformMakeTranslation(0, self.launcherContainer.view.bounds.size.height);
+        } completion:^(BOOL finished) { [self finishHidingLauncher]; }];
+    }
 }
 
 - (void)finishInteractivePresentation {
