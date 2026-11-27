@@ -10,6 +10,7 @@
 @property (nonatomic, strong, readonly) UIVisualEffectView *blurView;
 @property (nonatomic, strong, readonly) UIView *dimView;
 @property (nonatomic, strong, readonly) UIScrollView *scrollView;
+@property (nonatomic, copy, readonly) NSArray<UIView *> *taskViews;
 - (void)setLiveTaskViews:(NSArray<UIView *> *)taskViews;
 - (void)setTransitionProgress:(CGFloat)progress;
 - (void)restoreTaskGeometry;
