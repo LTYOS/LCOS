@@ -80,8 +80,6 @@
 @end
 
 @interface LCOSBackgroundView () <UIGestureRecognizerDelegate, UIScrollViewDelegate>
-@property (nonatomic, strong, readonly) NSMutableDictionary<NSValue *, LCOSTaskPlacement *> *placements;
-@property (nonatomic, strong, readonly) NSMutableDictionary<NSValue *, UIView *> *cardProxies;
 @property (nonatomic, strong) UIView *cardCanvas;
 @property (nonatomic, strong) UIVisualEffectView *blurView;
 @property (nonatomic, strong) UIView *dimView;
@@ -142,6 +140,9 @@
     }
     return self;
 }
+
+- (NSUInteger)placementCount { return self.placements.count; }
+- (NSUInteger)cardCount { return self.cardProxies.count; }
 
 - (NSValue *)keyForTask:(UIView *)task { return [NSValue valueWithNonretainedObject:task]; }
 
