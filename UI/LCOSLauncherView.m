@@ -24,11 +24,10 @@
 }
 
 - (instancetype)init {
-    self = [super init];
-    if (self) {
-        [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: init START"];
-    }
-    return self;
+    // Use one designated initializer path. Calling [super init] here skips the
+    // controller initialization implemented above and creates two different
+    // initialization semantics for the same desktop object.
+    return [self initWithNibName:nil bundle:nil];
 }
 
 - (void)viewDidLoad {
