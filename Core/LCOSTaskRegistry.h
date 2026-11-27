@@ -6,6 +6,7 @@
 - (BOOL)registerTask:(UIView *)view fromLCOS:(BOOL)fromLCOS;
 - (void)unregisterTask:(UIView *)view;
 - (void)unregisterTaskWithUUID:(NSString *)uuid;
+- (void)unregisterTaskWithController:(UIViewController *)controller;
 - (BOOL)isTaskRunning:(UIView *)view;
 - (NSArray<UIView *> *)runningTasksFromLCOS:(BOOL)fromLCOS;
 - (UIView *)activeTaskFromLCOS:(BOOL)fromLCOS;
