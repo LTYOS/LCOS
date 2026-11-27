@@ -374,7 +374,7 @@
     [self.switcher setNeedsLayout];
     [self.switcher layoutIfNeeded];
     [self.switcher setTransitionProgress:1];
-    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"%@: switcher placements=%lu cards=%lu", self.name, (unsigned long)self.switcher.placements.count, (unsigned long)self.switcher.cardProxies.count]];
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"%@: switcher placements=%lu cards=%lu", self.name, (unsigned long)self.switcher.placementCount, (unsigned long)self.switcher.cardCount]];
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"%@: switcher tasks=%lu content=%@ frame=%@ host=%@", self.name, (unsigned long)self.switcher.taskViews.count, NSStringFromCGSize(self.switcher.scrollView.contentSize), NSStringFromCGRect(self.switcher.scrollView.frame), host ?: self.root]];
     _backgroundView = self.switcher;
     ((LCOSPassThroughWindow *)self.overlay).backgroundView = self.switcher;
