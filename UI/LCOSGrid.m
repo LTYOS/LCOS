@@ -60,9 +60,9 @@
         tapGesture.delegate = self;
         [self.scrollView addGestureRecognizer:tapGesture];
 
-        // Icon hit testing happens on a completed tap; paging must not wait
-        // for that tap to fail after the finger has already started moving.
-        self.scrollView.panGestureRecognizer.delegate = self;
+        // UIScrollView must retain ownership of its built-in pan gesture
+        // delegate. Assigning LCOSGrid here raises NSInvalidArgumentException.
+        // Keep only the scrollView delegate for paging callbacks.
         [[LCOSLogManager sharedManager] forceLog:@"LCOSGrid: gestures stage"];
 
         self.pageControl = [[UIPageControl alloc] initWithFrame:CGRectZero];
