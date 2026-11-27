@@ -7,6 +7,7 @@
 @property (nonatomic, strong) UIView *shadow;
 @property (nonatomic, strong) NSArray<NSLayoutConstraint *> *externalConstraints;
 @property (nonatomic, assign) CGPoint center;
+@property (nonatomic, assign) CGRect originalFrame;
 @property (nonatomic, assign) CGAffineTransform transform;
 @property (nonatomic, assign) CGFloat alpha;
 @property (nonatomic, assign) CGFloat radius;
@@ -26,6 +27,7 @@
         _task = task;
         _parent = task.superview;
         _center = task.center;
+        _originalFrame = task.frame;
         _transform = task.transform;
         _alpha = task.alpha;
         _radius = task.layer.cornerRadius;
@@ -62,9 +64,8 @@
     if (!task) return;
     // Restore untransformed frame first so a previous card scale cannot become
     // the next presentation's geometry baseline.
-    CGAffineTransform current = task.transform;
     task.transform = CGAffineTransformIdentity;
-    task.frame = (CGRect){CGPointZero, task.bounds.size};
+    task.frame = self.originalFrame;
     task.transform = self.transform;
     task.center = self.center;
     task.alpha = self.alpha;
@@ -147,7 +148,6 @@
     [self.cardFrames removeAllObjects];
     [self.cardProxies removeAllObjects];
     [self.placements removeAllObjects];
-    self.emptyLabel.hidden = self.taskViews.count > 0;
     for (UIView *task in self.taskViews) {
         if (![task isKindOfClass:UIView.class] || !task.superview || task.bounds.size.width < 1 || task.bounds.size.height < 1) continue;
         NSValue *key = [self keyForTask:task];
@@ -159,6 +159,7 @@
         [self.scrollView addSubview:proxy];
         self.cardProxies[key] = proxy;
     }
+    self.emptyLabel.hidden = self.taskViews.count > 0;
     [self setNeedsLayout];
 }
 
