@@ -1,0 +1,175 @@
+name: Apply single-file patch from Issue
+
+on:
+  issues:
+    types: [opened, labeled]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: issue-patch-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  apply-patch:
+    # Only the repository owner can trigger this workflow.
+    if: >
+      github.event.issue.user.login == 'LTYOS' &&
+      github.event.sender.login == 'LTYOS' &&
+      contains(github.event.issue.labels.*.name, 'patch-request')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Save Issue body as data
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          printf '%s' "$ISSUE_BODY" > issue-body.md
+
+      - name: Parse Issue and write target file
+        id: patch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import re
+          import sys
+
+          body = pathlib.Path("issue-body.md").read_text(encoding="utf-8")
+
+          path_match = re.search(
+              r"(?m)^LCOS-FILE:[ \t]*([^\r\n]+?)[ \t]*$",
+              body,
+          )
+          content_match = re.search(
+              r"(?ms)^LCOS-CONTENT:[ \t]*\r?\n```[^\r\n]*\r?\n"
+              r"(.*?)\r?\n```[ \t]*\r?\n?LCOS-END:[ \t]*$",
+              body,
+          )
+
+          if not path_match or not content_match:
+              print(
+                  "Invalid Issue format. Required: LCOS-FILE, "
+                  "LCOS-CONTENT, fenced code block, and LCOS-END.",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+
+          relative_path = path_match.group(1).strip()
+          target = pathlib.PurePosixPath(relative_path)
+
+          if (
+              not relative_path
+              or target.is_absolute()
+              or "\\" in relative_path
+              or "\x00" in relative_path
+              or any(part in ("", ".", "..") for part in target.parts)
+              or relative_path.startswith(".git/")
+              or relative_path == ".git"
+          ):
+              print(f"Unsafe target path: {relative_path}", file=sys.stderr)
+              sys.exit(1)
+
+          # These release files must be prepared explicitly in the same patch.
+          if relative_path == "RELEASE_VERSION":
+              print(
+                  "Do not use an Issue patch to change RELEASE_VERSION alone.",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+
+          destination = pathlib.Path.cwd().joinpath(*target.parts)
+          destination.parent.mkdir(parents=True, exist_ok=True)
+          destination.write_text(
+              content_match.group(1) + "\n",
+              encoding="utf-8",
+          )
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"path={relative_path}\n")
+          PY
+
+          if git diff --quiet -- "${{ steps.patch.outputs.path }}"; then
+            echo "Issue content is identical to main; no commit needed."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push patch branch
+        if: steps.patch.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: bot/issue-patch-${{ github.event.issue.number }}
+          TARGET_PATH: ${{ steps.patch.outputs.path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if gh api \
+            "repos/${{ github.repository }}/git/ref/heads/$BRANCH" \
+            >/dev/null 2>&1; then
+            echo "Branch already exists: $BRANCH" >&2
+            exit 1
+          fi
+
+          git switch -c "$BRANCH"
+          git add -- "$TARGET_PATH"
+          git commit -m \
+            "fix: apply Issue #${{ github.event.issue.number }} patch to $TARGET_PATH"
+          git push origin "$BRANCH"
+
+      - name: Create pull request
+        if: steps.patch.outputs.changed == 'true'
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: bot/issue-patch-${{ github.event.issue.number }}
+          TARGET_PATH: ${{ steps.patch.outputs.path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > pr-body.md <<EOF
+          自动应用 Issue #${{ github.event.issue.number }} 提供的完整文件内容。
+
+          - 文件：\`$TARGET_PATH\`
+          - 来源：${{ github.event.issue.html_url }}
+          - 请人工 Review 后再合并。
+          EOF
+
+          PR_URL=$(gh pr create \
+            --repo "${{ github.repository }}" \
+            --base main \
+            --head "$BRANCH" \
+            --title "Issue #${{ github.event.issue.number }}：更新 $TARGET_PATH" \
+            --body-file pr-body.md)
+
+          echo "url=$PR_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Comment PR link on Issue
+        if: steps.pr.outputs.url != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ steps.pr.outputs.url }}
+        run: |
+          gh issue comment "${{ github.event.issue.number }}" \
+            --repo "${{ github.repository }}" \
+            --body "已创建补丁 PR，请 Review 后合并：$PR_URL"
