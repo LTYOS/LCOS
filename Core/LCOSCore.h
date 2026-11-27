@@ -5,6 +5,7 @@
 
 @class LCOSLauncherView;
 @class UIViewController;
+@class LCOSShellController;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -15,6 +16,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, strong, nullable) LCOSLauncherView *launcherView;
 @property (nonatomic, strong, nullable) UIViewController *launcherContainer;
 @property (nonatomic, assign) BOOL isLauncherVisible;
+@property (nonatomic, strong, nullable) LCOSShellController *nativeShell;
+@property (nonatomic, strong, nullable) LCOSShellController *lcosShell;
 
 + (instancetype)sharedInstance;
 - (void)initialize;
