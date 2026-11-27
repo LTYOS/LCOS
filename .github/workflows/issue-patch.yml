@@ -135,8 +135,8 @@ jobs:
           if gh api \
             "repos/${{ github.repository }}/git/ref/heads/$BRANCH" \
             >/dev/null 2>&1; then
-            echo "Branch already exists: $BRANCH" >&2
-            exit 1
+            echo "Branch already exists; commit was already pushed. Continue to PR creation."
+            exit 0
           fi
 
           git switch -c "$BRANCH"
