@@ -80,6 +80,8 @@
 @end
 
 @interface LCOSBackgroundView () <UIGestureRecognizerDelegate, UIScrollViewDelegate>
+@property (nonatomic, strong, readonly) NSMutableDictionary<NSValue *, LCOSTaskPlacement *> *placements;
+@property (nonatomic, strong, readonly) NSMutableDictionary<NSValue *, UIView *> *cardProxies;
 @property (nonatomic, strong) UIView *cardCanvas;
 @property (nonatomic, strong) UIVisualEffectView *blurView;
 @property (nonatomic, strong) UIView *dimView;
@@ -144,14 +146,18 @@
 - (NSValue *)keyForTask:(UIView *)task { return [NSValue valueWithNonretainedObject:task]; }
 
 - (void)setLiveTaskViews:(NSArray<UIView *> *)taskViews {
-    self.taskViews = @[];
+    // Validate the candidate list once. Never append to the same array while
+    // enumerating it, and never clear the incoming tasks before creating cards.
+    NSMutableArray<UIView *> *validTasks = [NSMutableArray array];
+    for (UIView *task in taskViews) {
+        if ([task isKindOfClass:UIView.class] && task.superview && task.bounds.size.width >= 1 && task.bounds.size.height >= 1) [validTasks addObject:task];
+    }
+    self.taskViews = [validTasks copy];
     [self.cardFrames removeAllObjects];
     [self.cardProxies removeAllObjects];
     [self.placements removeAllObjects];
     for (UIView *task in self.taskViews) {
-        if (![task isKindOfClass:UIView.class] || !task.superview || task.bounds.size.width < 1 || task.bounds.size.height < 1) continue;
         NSValue *key = [self keyForTask:task];
-        self.taskViews = [self.taskViews arrayByAddingObject:task];
         LCOSTaskPlacement *placement = [[LCOSTaskPlacement alloc] initWithTask:task];
         self.placements[key] = placement;
         UIView *proxy = [[UIView alloc] initWithFrame:task.bounds];
@@ -238,6 +244,8 @@
     [self.placements removeAllObjects];
     for (UIView *proxy in self.cardProxies.allValues) [proxy removeFromSuperview];
     [self.cardProxies removeAllObjects];
+    [self.cardFrames removeAllObjects];
+    self.draggedTask = nil;
 }
 
 - (void)prepareForTaskActivation {
