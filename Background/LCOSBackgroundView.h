@@ -6,12 +6,13 @@
 @property (nonatomic, copy) BOOL (^onActivateTask)(UIView *taskView);
 @property (nonatomic, copy) BOOL (^onCloseTask)(UIView *taskView);
 @property (nonatomic, copy) void (^onTaskPresented)(UIView *taskView);
-- (void)setSourceDesktop:(UIView *)desktop;
+@property (nonatomic, strong, readonly) UIView *cardCanvas;
+@property (nonatomic, strong, readonly) UIVisualEffectView *blurView;
+@property (nonatomic, strong, readonly) UIView *dimView;
 - (void)setLiveTaskViews:(NSArray<UIView *> *)taskViews;
 - (void)setTransitionProgress:(CGFloat)progress;
 - (void)restoreTaskGeometry;
-- (void)detachSourceDesktop;
 - (void)prepareForTaskActivation;
 - (void)removeTaskFromCards:(UIView *)task;
-- (void)setSourceScales:(BOOL)scales;
+- (void)setBackdropActive:(BOOL)active;
 @end
