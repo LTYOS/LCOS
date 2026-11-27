@@ -433,7 +433,12 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     // nil or foreign object into UIKit's childViewControllers array.
     if (!self.launcherView) {
         [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: content controller allocation"];
-        self.launcherView = [[LCOSLauncherView alloc] init];
+        LCOSLauncherView *allocatedLauncher = [LCOSLauncherView alloc];
+        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
+            @"LCOS Launcher: alloc returned %@", allocatedLauncher ? NSStringFromClass(allocatedLauncher.class) : @"nil"]];
+        self.launcherView = [allocatedLauncher initWithNibName:nil bundle:nil];
+        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
+            @"LCOS Launcher: init returned %@", self.launcherView ? NSStringFromClass(self.launcherView.class) : @"nil"]];
     }
     Class launcherClass = LCOSLauncherView.class;
     BOOL expectedType = [self.launcherView isKindOfClass:launcherClass];
