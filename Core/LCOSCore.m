@@ -1216,8 +1216,12 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Guest: host return accepted=%d", accepted]];
 }
 
-- (void)setLauncherView:(UIView *)launcherView {
-    [self.lcosShell setLauncherView:launcherView];
+- (void)setLauncherView:(LCOSLauncherView *)launcherView {
+    // This property owns the controller. Forward only its view to the shell;
+    // forwarding the object itself without storing it leaves self.launcherView
+    // nil even after UIKit has successfully initialized the controller.
+    _launcherView = launcherView;
+    [self.lcosShell setLauncherView:launcherView.view];
 }
 
 - (BOOL)isBackgroundVisible {
