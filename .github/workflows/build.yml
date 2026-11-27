@@ -117,15 +117,16 @@ jobs:
             -f ref="refs/tags/$TAG" \
             -f sha="$GITHUB_SHA"
 
-      - name: Create draft Release from main
+      - name: Create latest Release from main
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.version.outputs.tag_exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           target_commitish: ${{ github.sha }}
-          name: LCOS ${{ steps.version.outputs.version }} 测试版
+          name: LCOS ${{ steps.version.outputs.version }}
           body_path: RELEASE_NOTES.md
-          draft: true
+          draft: false
+          make_latest: true
           prerelease: false
           files: dist/LCOS.dylib
           generate_release_notes: false
