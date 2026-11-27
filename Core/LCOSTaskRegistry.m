@@ -6,6 +6,7 @@
 @interface LCOSTaskRecord : NSObject
 @property (nonatomic, weak) UIView *view;
 @property (nonatomic, assign) BOOL fromLCOS;
+@property (nonatomic, copy) NSString *uuid;
 @end
 @implementation LCOSTaskRecord
 @end
@@ -20,6 +21,7 @@ static void LCOSRemoveRunningApp(id self, SEL _cmd, NSString *uuid);
 @property (nonatomic, weak) UIView *activeNativeTask;
 @property (nonatomic, weak) UIView *activeLCOSTask;
 @property (nonatomic, assign) BOOL hooksInstalled;
+@property (nonatomic, strong) NSMutableDictionary<NSValue *, NSNumber *> *pendingPresentations;
 @end
 
 @implementation LCOSTaskRegistry
@@ -35,6 +37,7 @@ static void LCOSRemoveRunningApp(id self, SEL _cmd, NSString *uuid);
     self = [super init];
     if (self) {
         _records = [NSMutableArray array];
+        _pendingPresentations = [NSMutableDictionary dictionary];
         [self installHooksIfPossible];
     }
     return self;
@@ -87,19 +90,16 @@ static void LCOSAddRunningApp(id self, SEL _cmd, NSString *name, NSString *uuid,
     if ([shared respondsToSelector:NSSelectorFromString(@"isLauncherVisible")])
         fromLCOS = ((BOOL (*)(id, SEL))objc_msgSend)(shared, NSSelectorFromString(@"isLauncherVisible"));
     [[LCOSTaskRegistry shared] registerTask:view fromLCOS:fromLCOS];
-    NSString *shellName = fromLCOS ? @"lcosShell" : @"nativeShell";
-    id controller = ((id (*)(id, SEL))objc_msgSend)(shared, NSSelectorFromString(shellName));
-    if ([controller respondsToSelector:@selector(presentTask:)])
-        ((void (*)(id, SEL, UIView *))objc_msgSend)(controller, @selector(presentTask:), view);
 }
 
 static void LCOSRemoveRunningApp(id self, SEL _cmd, NSString *uuid) {
     if (orig_removeRunningApp) orig_removeRunningApp(self, _cmd, uuid);
+    [[LCOSTaskRegistry shared] unregisterTaskWithUUID:uuid];
 }
 
 - (id)controllerForTask:(UIView *)view {
     if (![view isKindOfClass:UIView.class]) return nil;
-    Class decorated = LCOSSwiftClass(@"DecoratedAppSceneViewController");
+    Class decorated = NSClassFromString(@"DecoratedAppSceneViewController");
     SEL delegate = NSSelectorFromString(@"_viewDelegate");
     if ([view respondsToSelector:delegate]) {
         id controller = ((id (*)(id, SEL))objc_msgSend)(view, delegate);
@@ -130,29 +130,94 @@ static void LCOSRemoveRunningApp(id self, SEL _cmd, NSString *uuid) {
     return [self isRunning:view];
 }
 
-- (void)registerTask:(UIView *)view fromLCOS:(BOOL)fromLCOS {
-    if (![view isKindOfClass:UIView.class]) return;
-    for (LCOSTaskRecord *record in self.records) {
-        if (record.view == view) {
-            [self activateTask:view fromLCOS:record.fromLCOS];
-            return;
-        }
+- (BOOL)registerTask:(UIView *)view fromLCOS:(BOOL)fromLCOS {
+    if (![view isKindOfClass:UIView.class]) return NO;
+    id controller = [self controllerForTask:view];
+    if (!controller) {
+        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
+            @"LCOS Task: rejected %@, no DecoratedAppSceneViewController", view.class]];
+        return NO;
     }
-    LCOSTaskRecord *record = [[LCOSTaskRecord alloc] init];
-    record.view = view;
-    record.fromLCOS = fromLCOS;
-    [self.records addObject:record];
+    LCOSTaskRecord *existing = nil;
+    for (LCOSTaskRecord *record in self.records) {
+        if (record.view == view) { existing = record; break; }
+    }
+    if (!existing) {
+        existing = [[LCOSTaskRecord alloc] init];
+        existing.view = view;
+        existing.fromLCOS = fromLCOS;
+        [self.records addObject:existing];
+    }
     [self activateTask:view fromLCOS:fromLCOS];
+    [self presentTaskWhenReady:view fromLCOS:fromLCOS attempt:0];
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
-        @"LCOS Task: registered %@ in %@", view.class, fromLCOS ? @"LCOSShell" : @"NativeShell"]];
+        @"LCOS Task: verified %@ controller=%@ in %@", view.class, [controller class],
+        fromLCOS ? @"LCOSShell" : @"NativeShell"]];
+    return YES;
+}
+
+- (NSValue *)pendingKeyForTask:(UIView *)view {
+    return [NSValue valueWithNonretainedObject:view];
+}
+
+- (void)presentTaskWhenReady:(UIView *)view fromLCOS:(BOOL)fromLCOS attempt:(NSUInteger)attempt {
+    if (![self recordForTask:view]) return;
+    Class core = NSClassFromString(@"LCOSCore");
+    id shared = ((id (*)(id, SEL))objc_msgSend)(core, @selector(sharedInstance));
+    NSString *shellName = fromLCOS ? @"lcosShell" : @"nativeShell";
+    id shell = ((id (*)(id, SEL))objc_msgSend)(shared, NSSelectorFromString(shellName));
+    if (![shell respondsToSelector:@selector(presentTask:)]) return;
+    NSValue *key = [self pendingKeyForTask:view];
+    if ([self isRunning:view]) {
+        [self.pendingPresentations removeObjectForKey:key];
+        ((void (*)(id, SEL, UIView *))objc_msgSend)(shell, @selector(presentTask:), view);
+        return;
+    }
+    if (attempt >= 30) {
+        [self.pendingPresentations removeObjectForKey:key];
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS Task: app did not reach running state"];
+        return;
+    }
+    if (self.pendingPresentations[key]) return;
+    self.pendingPresentations[key] = @YES;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self.pendingPresentations removeObjectForKey:key];
+        if (![self recordForTask:view]) return;
+        [self presentTaskWhenReady:view fromLCOS:fromLCOS attempt:attempt + 1];
+    });
+}
+
+- (LCOSTaskRecord *)recordForTask:(UIView *)view {
+    for (LCOSTaskRecord *record in self.records) {
+        if (record.view == view) return record;
+    }
+    return nil;
+}
+
+- (void)unregisterTaskWithUUID:(NSString *)uuid {
+    for (LCOSTaskRecord *record in [self.records copy]) {
+        id controller = [self controllerForTask:record.view];
+        if (![controller respondsToSelector:NSSelectorFromString(@"dataUUID")]) continue;
+        NSString *candidate = ((id (*)(id, SEL))objc_msgSend)(controller, NSSelectorFromString(@"dataUUID"));
+        if ([candidate isEqualToString:uuid]) [self unregisterTask:record.view];
+    }
+}
+
+- (void)unregisterTask:(UIView *)view {
+    LCOSTaskRecord *record = [self recordForTask:view];
+    if (record) [self.records removeObject:record];
+    [self.pendingPresentations removeObjectForKey:[self pendingKeyForTask:view]];
+    if (self.activeNativeTask == view) self.activeNativeTask = nil;
+    if (self.activeLCOSTask == view) self.activeLCOSTask = nil;
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Task: task removed"];
 }
 
 - (NSArray<UIView *> *)runningTasksFromLCOS:(BOOL)fromLCOS {
     NSMutableArray<UIView *> *tasks = [NSMutableArray array];
     for (LCOSTaskRecord *record in [self.records copy]) {
         UIView *view = record.view;
-        if (!view || ![self isRunning:view]) { [self.records removeObject:record]; continue; }
-        if (record.fromLCOS == fromLCOS) [tasks addObject:view];
+        if (!view || ![self controllerForTask:view]) { [self unregisterTask:view]; continue; }
+        if (record.fromLCOS == fromLCOS && [self isRunning:view]) [tasks addObject:view];
     }
     return tasks;
 }
@@ -174,11 +239,7 @@ static void LCOSRemoveRunningApp(id self, SEL _cmd, NSString *uuid) {
     id controller = [self controllerForTask:view];
     SEL close = NSSelectorFromString(@"closeWindow");
     if (![controller respondsToSelector:close]) return NO;
-    for (LCOSTaskRecord *record in [self.records copy]) {
-        if (record.view == view) [self.records removeObject:record];
-    }
-    if (self.activeNativeTask == view) self.activeNativeTask = nil;
-    if (self.activeLCOSTask == view) self.activeLCOSTask = nil;
+    [self unregisterTask:view];
     ((void (*)(id, SEL))objc_msgSend)(controller, close);
     return YES;
 }
