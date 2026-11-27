@@ -15,19 +15,15 @@
 @implementation LCOSLauncherView
 
 - (instancetype)initWithNibName:(NSString *)nibNameOrNil bundle:(NSBundle *)nibBundleOrNil {
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: designated init ENTRY"];
     self = [super initWithNibName:nibNameOrNil bundle:nibBundleOrNil];
-    if (self) {
-        [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: init START"];
-        self.modalPresentationStyle = UIModalPresentationFullScreen;
-    }
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
+        @"LCOS Launcher: super init returned %@", self ? NSStringFromClass(self.class) : @"nil"]];
+    if (!self) return nil;
+    // This controller is embedded as a child, not presented modally. Avoid
+    // changing presentation policy during its allocation-sensitive init path.
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Launcher: designated init EXIT"];
     return self;
-}
-
-- (instancetype)init {
-    // Use one designated initializer path. Calling [super init] here skips the
-    // controller initialization implemented above and creates two different
-    // initialization semantics for the same desktop object.
-    return [self initWithNibName:nil bundle:nil];
 }
 
 - (void)viewDidLoad {
