@@ -11,6 +11,8 @@
 @property (nonatomic, strong, readonly) UIView *dimView;
 @property (nonatomic, strong, readonly) UIScrollView *scrollView;
 @property (nonatomic, copy, readonly) NSArray<UIView *> *taskViews;
+@property (nonatomic, assign, readonly) NSUInteger placementCount;
+@property (nonatomic, assign, readonly) NSUInteger cardCount;
 - (void)setLiveTaskViews:(NSArray<UIView *> *)taskViews;
 - (void)setTransitionProgress:(CGFloat)progress;
 - (void)restoreTaskGeometry;
