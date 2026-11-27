@@ -134,10 +134,12 @@
 }
 
 - (void)presentTask:(UIView *)task {
-    if (![self.tasks isTaskRunning:task]) return;
+    if (![self.tasks isTaskRunning:task]) {
+        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"%@: task not running yet", self.name]];
+        return;
+    }
     self.activeTask = task;
     self.hasActiveTask = YES;
-    if (self.taskStage) [self.taskStage addSubview:task];
     [self.tasks activateTask:task fromLCOS:self.fromLCOS];
     task.hidden = NO;
     task.alpha = 1;
@@ -147,43 +149,36 @@
 }
 
 - (void)prepareTaskStage {
-    if (self.taskStage || !self.activeTask) return;
+    if (self.taskState) return;
+    if (!self.activeTask) self.activeTask = [self.tasks activeTaskFromLCOS:self.fromLCOS];
     UIView *task = self.activeTask;
-    UIView *parent = task.superview;
-    self.taskStage = [[UIView alloc] initWithFrame:self.root.bounds];
-    self.taskStage.backgroundColor = UIColor.clearColor;
-    self.taskStage.clipsToBounds = NO;
-    [self.root insertSubview:self.taskStage belowSubview:self.edgeZone];
-    self.taskState = [@{@"parent": parent, @"index": @([parent.subviews indexOfObjectIdenticalTo:task]),
-        @"frame": [NSValue valueWithCGRect:task.frame], @"transform": [NSValue valueWithCGAffineTransform:task.transform],
-        @"center": [NSValue valueWithCGPoint:task.center], @"alpha": @(task.alpha), @"hidden": @(task.hidden),
+    if (!task || ![self.tasks isTaskRunning:task] || !task.superview) {
+        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"%@: no verified active task for transition", self.name]];
+        return;
+    }
+    // Keep the real view in its original window. Reparenting it into the
+    // overlay loses the controller's presentation context and prevents both
+    // home restoration and the switcher's original-parent recovery.
+    self.taskStage = task.superview;
+    self.taskState = [@{@"transform": [NSValue valueWithCGAffineTransform:task.transform],
+        @"center": [NSValue valueWithCGPoint:task.center], @"frame": [NSValue valueWithCGRect:task.frame],
+        @"alpha": @(task.alpha), @"hidden": @(task.hidden), @"radius": @(task.layer.cornerRadius),
         @"interaction": @(task.userInteractionEnabled)} mutableCopy];
-    [self.taskStage addSubview:task];
-    task.transform = CGAffineTransformIdentity;
-    task.frame = self.taskStage.bounds;
-    task.hidden = NO;
-    task.alpha = 1;
     task.userInteractionEnabled = NO;
-    [self.root bringSubviewToFront:self.taskStage];
-    [self.root bringSubviewToFront:self.edgeZone];
-    [self.root bringSubviewToFront:self.navigationBar];
 }
 
 - (void)restoreTaskStage {
     UIView *task = self.activeTask;
     if (task && self.taskState) {
-        UIView *parent = self.taskState[@"parent"];
-        if ([parent isKindOfClass:UIView.class]) [parent insertSubview:task atIndex:MIN([self.taskState[@"index"] unsignedIntegerValue], parent.subviews.count)];
         task.frame = [self.taskState[@"frame"] CGRectValue];
         task.transform = [self.taskState[@"transform"] CGAffineTransformValue];
         task.center = [self.taskState[@"center"] CGPointValue];
         task.alpha = [self.taskState[@"alpha"] doubleValue];
         task.hidden = [self.taskState[@"hidden"] boolValue];
         task.userInteractionEnabled = [self.taskState[@"interaction"] boolValue];
-        task.layer.cornerRadius = 0;
+        task.layer.cornerRadius = [self.taskState[@"radius"] doubleValue];
     }
     self.taskState = nil;
-    [self.taskStage removeFromSuperview];
     self.taskStage = nil;
 }
 
@@ -201,6 +196,13 @@
         self.startX = point.x;
         self.travel = 0;
         [self prepareTaskStage];
+        if (self.hasActiveTask && !self.taskState) {
+            self.transitionActive = NO;
+            self.navigationBar.alpha = 0;
+            gesture.enabled = NO;
+            gesture.enabled = YES;
+            return;
+        }
         self.navigationBar.transform = CGAffineTransformIdentity;
         self.navigationBar.alpha = 1;
         [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"%@: navigation began", self.name]];
@@ -223,9 +225,10 @@
 }
 
 - (void)updateInteractiveProgress {
-    if (!self.taskStage || !self.activeTask) return;
+    if (!self.taskState || !self.activeTask) return;
     CGFloat progress = MIN(1, MAX(0, self.travel / MAX(80, self.overlay.bounds.size.width * 0.42)));
-    self.activeTask.transform = CGAffineTransformMakeScale(1 - 0.22 * progress, 1 - 0.22 * progress);
+    CGAffineTransform original = [self.taskState[@"transform"] CGAffineTransformValue];
+    self.activeTask.transform = CGAffineTransformConcat(original, CGAffineTransformMakeScale(1 - 0.22 * progress, 1 - 0.22 * progress));
     self.activeTask.alpha = 1 - 0.65 * progress;
     self.activeTask.layer.cornerRadius = 60 * progress;
     self.activeTask.layer.masksToBounds = YES;
@@ -240,10 +243,13 @@
         } completion:^(BOOL finished) { [self returnHome]; }];
         return;
     }
+    CGAffineTransform original = self.taskState ? [self.taskState[@"transform"] CGAffineTransformValue] : CGAffineTransformIdentity;
+    CGFloat originalAlpha = self.taskState ? [self.taskState[@"alpha"] doubleValue] : 1;
+    CGFloat originalRadius = self.taskState ? [self.taskState[@"radius"] doubleValue] : 0;
     [UIView animateWithDuration:0.20 animations:^{
-        self.activeTask.transform = CGAffineTransformIdentity;
-        self.activeTask.alpha = 1;
-        self.activeTask.layer.cornerRadius = 0;
+        self.activeTask.transform = original;
+        self.activeTask.alpha = originalAlpha;
+        self.activeTask.layer.cornerRadius = originalRadius;
         self.navigationBar.transform = CGAffineTransformIdentity;
         self.navigationBar.alpha = 0;
     } completion:^(BOOL finished) { [self cancelTransition]; }];
@@ -251,6 +257,11 @@
 
 - (void)returnHome {
     [self cancelDwell];
+    if (self.hasActiveTask && !self.taskState) {
+        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"%@: home skipped, no verified task stage", self.name]];
+        [self resetTransition];
+        return;
+    }
     [self restoreTaskStage];
     for (UIView *task in [self.tasks runningTasksFromLCOS:self.fromLCOS]) {
         task.hidden = YES;
@@ -322,6 +333,7 @@
     };
     __weak typeof(self) weakSelf = self;
     self.switcher.onTaskPresented = ^(UIView *task) {
+        [weakSelf restoreTaskStage];
         weakSelf.isBackgroundVisible = NO;
         weakSelf.switcher = nil;
         weakSelf.backgroundView = nil;
@@ -330,15 +342,20 @@
         [weakSelf presentTask:task];
         [weakSelf resetTransition];
     };
-    [self.switcher setLiveTaskViews:[self.tasks runningTasksFromLCOS:self.fromLCOS]];
+    NSArray<UIView *> *tasks = [self.tasks runningTasksFromLCOS:self.fromLCOS];
+    [self.switcher setLiveTaskViews:tasks];
     [self.switcher setTransitionProgress:1];
     [self.switcher setBackdropActive:YES];
     [self.root addSubview:self.switcher];
+    [self.switcher setNeedsLayout];
+    [self.switcher layoutIfNeeded];
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"%@: switcher tasks=%lu content=%@", self.name, (unsigned long)tasks.count, NSStringFromCGSize(self.switcher.scrollView.contentSize)]];
     _backgroundView = self.switcher;
     ((LCOSPassThroughWindow *)self.overlay).backgroundView = self.switcher;
     self.activeTask = nil;
     self.hasActiveTask = NO;
     [self resetTransition];
+    [self.root bringSubviewToFront:self.switcher];
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"%@: background presented", self.name]];
 }
 
