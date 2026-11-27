@@ -4,7 +4,6 @@
 #import "LCOSNavigationBar.h"
 #import "LCOSLogManager.h"
 #import "LCOSPassThroughWindow.h"
-#import <objc/message.h>
 
 @interface LCOSEdgeZone : UIView <UIGestureRecognizerDelegate>
 @property (nonatomic, copy) void (^onPan)(UIPanGestureRecognizer *gesture);
@@ -50,10 +49,12 @@
 @property (nonatomic, strong) UIView *taskStage;
 @property (nonatomic, weak) UIView *activeTask;
 @property (nonatomic, strong) LCOSBackgroundView *switcher;
+@property (nonatomic, strong) UIVisualEffectView *hostBlurView;
 @property (nonatomic, strong) NSTimer *dwellTimer;
 @property (nonatomic, assign) BOOL transitionActive;
 @property (nonatomic, assign) BOOL launchingBackground;
 @property (nonatomic, assign) BOOL dwellReached;
+@property (nonatomic, assign) BOOL lastTaskIsBackground;
 @property (nonatomic, assign) CGFloat startX;
 @property (nonatomic, assign) CGFloat travel;
 @property (nonatomic, strong) NSMutableDictionary *taskState;
@@ -143,7 +144,6 @@
     self.hasActiveTask = YES;
     [self.tasks activateTask:task fromLCOS:self.fromLCOS];
     [task.layer removeAllAnimations];
-    task.transform = [self baseTaskTransform];
     task.hidden = NO;
     task.alpha = 1;
     task.userInteractionEnabled = YES;
@@ -162,27 +162,17 @@
     [task.layer removeAllAnimations];
     self.taskStage = task.superview;
     self.taskState = [@{@"center": [NSValue valueWithCGPoint:task.center], @"frame": [NSValue valueWithCGRect:task.frame],
+        @"transform": [NSValue valueWithCGAffineTransform:task.transform],
         @"alpha": @(task.alpha), @"hidden": @(task.hidden), @"radius": @(task.layer.cornerRadius),
         @"interaction": @(task.userInteractionEnabled)} mutableCopy];
     task.userInteractionEnabled = NO;
-}
-
-- (CGAffineTransform)baseTaskTransform {
-    id controller = [self.tasks controllerForTask:self.activeTask];
-    SEL selector = NSSelectorFromString(@"scaleRatio");
-    CGFloat scale = 1;
-    if ([controller respondsToSelector:selector]) {
-        scale = ((CGFloat (*)(id, SEL))objc_msgSend)(controller, selector);
-    }
-    if (!isfinite(scale) || scale <= 0) scale = 1;
-    return CGAffineTransformMakeScale(scale, scale);
 }
 
 - (void)restoreTaskStage {
     UIView *task = self.activeTask;
     if (task && self.taskState) {
         task.frame = [self.taskState[@"frame"] CGRectValue];
-        task.transform = [self baseTaskTransform];
+        task.transform = [self.taskState[@"transform"] CGAffineTransformValue];
         task.center = [self.taskState[@"center"] CGPointValue];
         task.alpha = [self.taskState[@"alpha"] doubleValue];
         task.hidden = [self.taskState[@"hidden"] boolValue];
@@ -206,6 +196,7 @@
         self.dwellReached = NO;
         self.startX = point.x;
         self.travel = 0;
+        self.lastTaskIsBackground = NO;
         [self prepareTaskStage];
         if (self.hasActiveTask && !self.taskState) {
             self.transitionActive = NO;
@@ -237,6 +228,13 @@
 
 - (void)updateInteractiveProgress {
     if (!self.taskState || !self.activeTask) return;
+    self.lastTaskIsBackground = self.dwellTimer != nil || self.dwellReached;
+    // A dwell is a card transition, not a home transition. Do not run the
+    // home scale/alpha path and then apply another card scale on top.
+    if (self.lastTaskIsBackground) {
+        self.navigationBar.transform = CGAffineTransformIdentity;
+        return;
+    }
     CGFloat progress = MIN(1, MAX(0, self.travel / MAX(80, self.overlay.bounds.size.width * 0.42)));
     self.activeTask.transform = CGAffineTransformMakeScale(1 - 0.22 * progress, 1 - 0.22 * progress);
     self.activeTask.alpha = 1 - 0.65 * progress;
@@ -253,7 +251,7 @@
         } completion:^(BOOL finished) { [self returnHome]; }];
         return;
     }
-    CGAffineTransform original = [self baseTaskTransform];
+    CGAffineTransform original = self.taskState ? [self.taskState[@"transform"] CGAffineTransformValue] : CGAffineTransformIdentity;
     CGFloat originalAlpha = self.taskState ? [self.taskState[@"alpha"] doubleValue] : 1;
     CGFloat originalRadius = self.taskState ? [self.taskState[@"radius"] doubleValue] : 0;
     [UIView animateWithDuration:0.20 animations:^{
@@ -324,7 +322,7 @@
     if (self.isBackgroundVisible) return;
     self.isBackgroundVisible = YES;
     UIView *presentedTask = self.activeTask;
-    [self restoreTaskStage];
+    [self cancelTransition];
     self.switcher = [[LCOSBackgroundView alloc] initWithFrame:self.root.bounds];
     self.switcher.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     self.switcher.backgroundColor = self.fromLCOS ? UIColor.clearColor : [UIColor colorWithWhite:0.10 alpha:0.35];
@@ -344,6 +342,8 @@
         weakSelf.switcher = nil;
         weakSelf.backgroundView = nil;
         ((LCOSPassThroughWindow *)weakSelf.overlay).backgroundView = nil;
+        [weakSelf.hostBlurView removeFromSuperview];
+        weakSelf.hostBlurView = nil;
         weakSelf.hasActiveTask = YES;
         [weakSelf presentTask:task];
         [weakSelf resetTransition];
@@ -352,11 +352,20 @@
     if (presentedTask && ![tasks containsObject:presentedTask]) [tasks addObject:presentedTask];
     [self.switcher setLiveTaskViews:tasks];
     [self.switcher setTransitionProgress:1];
-    [self.switcher setBackdropActive:YES];
+    UIView *host = presentedTask.superview;
+    [self.switcher setBackdropActive:!host];
+    if (host && presentedTask) {
+        self.hostBlurView = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark]];
+        self.hostBlurView.frame = host.bounds;
+        self.hostBlurView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        self.hostBlurView.userInteractionEnabled = NO;
+        [host insertSubview:self.hostBlurView belowSubview:presentedTask];
+        [host bringSubviewToFront:presentedTask];
+    }
     [self.root addSubview:self.switcher];
     [self.switcher setNeedsLayout];
     [self.switcher layoutIfNeeded];
-    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"%@: switcher tasks=%lu content=%@", self.name, (unsigned long)tasks.count, NSStringFromCGSize(self.switcher.scrollView.contentSize)]];
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"%@: switcher tasks=%lu content=%@ frame=%@ host=%@", self.name, (unsigned long)self.switcher.taskViews.count, NSStringFromCGSize(self.switcher.scrollView.contentSize), NSStringFromCGRect(self.switcher.scrollView.frame), host ?: self.root]];
     _backgroundView = self.switcher;
     ((LCOSPassThroughWindow *)self.overlay).backgroundView = self.switcher;
     self.activeTask = nil;
@@ -384,6 +393,8 @@
     [switcher restoreTaskGeometry];
     [switcher removeFromSuperview];
     self.switcher = nil;
+    [self.hostBlurView removeFromSuperview];
+    self.hostBlurView = nil;
     _backgroundView = nil;
     ((LCOSPassThroughWindow *)self.overlay).backgroundView = nil;
     [self restoreNativeWindowInteraction];
