@@ -138,7 +138,6 @@ static BOOL LCOSIsLiveContainerHost(void) {
 // Class extension for private properties
 @interface LCOSCore ()
 - (void)finishHidingLauncher;
-- (void)setLauncherView:(UIView *)launcherView;
 - (BOOL)isBackgroundVisible;
 - (UIView *)navigationTouchZone;
 @property (nonatomic, strong) UILongPressGestureRecognizer *overlayLongPressGesture;
