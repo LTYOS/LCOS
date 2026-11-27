@@ -2,6 +2,7 @@ name: Build LCOS.dylib
 
 on:
   push:
+    branches: [main]
     tags: ['v*']
   pull_request:
     branches: [main]
@@ -24,25 +25,42 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          TAG_EXISTS=false
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
+            TAG="$GITHUB_REF_NAME"
+            TAG_EXISTS=true
+          elif [[ "$GITHUB_REF_TYPE" == "branch" && "$GITHUB_REF_NAME" == "main" ]]; then
+            if [[ ! -f RELEASE_VERSION ]]; then
+              echo "RELEASE_VERSION is required for main releases" >&2
+              exit 1
+            fi
+            VERSION=$(tr -d '[:space:]' < RELEASE_VERSION)
+            TAG="v$VERSION"
+            if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+              TAG_EXISTS=true
+            fi
+            LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -1)
+            if [[ "$TAG_EXISTS" == "false" && -n "$LATEST_TAG" ]]; then
+              LATEST_VERSION="${LATEST_TAG#v}"
+              HIGHER_VERSION=$(printf '%s\n%s\n' "$LATEST_VERSION" "$VERSION" | sort -V | tail -1)
+              if [[ "$HIGHER_VERSION" != "$VERSION" || "$VERSION" == "$LATEST_VERSION" ]]; then
+                echo "::warning::$TAG is not newer than $LATEST_TAG; build only, no tag or release"
+                TAG_EXISTS=true
+              fi
+            fi
           else
             VERSION="dev"
+            TAG=""
           fi
           if [[ "$VERSION" != "dev" && ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Release tags must use vMAJOR.MINOR.PATCH" >&2
+            echo "Release versions must use MAJOR.MINOR.PATCH" >&2
             exit 1
-          fi
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            TAG="$GITHUB_REF_NAME"
-          else
-            LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -1)
-            if [[ -z "$LATEST_TAG" ]]; then LATEST_TAG="v1.0.0"; fi
-            TAG="$LATEST_TAG"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Build version: $VERSION; release tag: $TAG"
+          echo "tag_exists=$TAG_EXISTS" >> "$GITHUB_OUTPUT"
+          echo "Build version: $VERSION; release tag: $TAG; existing: $TAG_EXISTS"
 
       - name: Build LCOS.dylib
         shell: bash
@@ -83,7 +101,38 @@ jobs:
           path: dist/LCOS.dylib
           retention-days: 30
 
-      - name: Create Release
+      - name: Create version tag on main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.version.outputs.tag_exists == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists; no new tag created"
+            exit 0
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/$TAG" \
+            -f sha="$GITHUB_SHA"
+
+      - name: Create draft Release from main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.version.outputs.tag_exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: LCOS ${{ steps.version.outputs.version }} 测试版
+          body_path: RELEASE_NOTES.md
+          draft: true
+          prerelease: false
+          files: dist/LCOS.dylib
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Release from version tag
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
