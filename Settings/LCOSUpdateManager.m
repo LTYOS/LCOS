@@ -224,29 +224,37 @@ static NSString *const kLCOSUpdateErrorDomain = @"LCOSUpdateError";
         if (![data writeToFile:staging options:NSDataWritingAtomic error:&writeError]) {
             [self finishInstall:completion error:writeError ?: [self error:6 description:@"无法写入插件目录"]]; return;
         }
-        [self signAndReplace:staging release:release completion:completion];
-    }] resume];
-}
-
-- (void)signAndReplace:(NSString *)staging release:(NSDictionary *)release completion:(void (^)(NSError *))completion {
-    Class utils = NSClassFromString(@"LCUtils");
-    SEL selector = NSSelectorFromString(@"signFilesWithZSignWithURLs:completionHandler:");
-    if (![utils respondsToSelector:selector]) {
-        [NSFileManager.defaultManager removeItemAtPath:staging error:nil];
-        [self finishInstall:completion error:[self error:7 description:@"未找到 LiveContainer 签名接口，旧版本未覆盖"]];
-        return;
-    }
-    typedef NSProgress *(*SignFiles)(id, SEL, NSArray *, void (^)(BOOL, NSError *));
-    SignFiles sign = (SignFiles)objc_msgSend;
-    sign(utils, selector, @[[NSURL fileURLWithPath:staging]], ^(BOOL success, NSError *error) {
-        if (!success || error) {
-            [NSFileManager.defaultManager removeItemAtPath:staging error:nil];
-            [self finishInstall:completion error:error ?: [self error:8 description:@"模块签名失败，旧版本未覆盖"]];
-            return;
-        }
         NSError *replaceError = nil;
         [self replaceStagedBinary:staging error:&replaceError];
         [self finishInstall:completion error:replaceError];
+    }] resume];
+}
+
+- (void)signInstalledPluginWithCompletion:(void (^)(NSError *))completion {
+    if (!completion) return;
+    NSError *directoryError = nil;
+    NSString *directory = self.pluginDirectory;
+    if (![self validPluginDirectory:directory error:&directoryError]) {
+        [self finishInstall:completion error:directoryError];
+        return;
+    }
+    Class utils = NSClassFromString(@"LCUtils");
+    SEL selector = NSSelectorFromString(@"signFilesWithZSignWithURLs:completionHandler:");
+    if (![utils respondsToSelector:selector]) {
+        [self finishInstall:completion error:[self error:7 description:@"未找到 LiveContainer 签名接口，请稍后重试"]];
+        return;
+    }
+    NSString *target = [self.resolvedPluginDirectory stringByAppendingPathComponent:@"LCOS.dylib"];
+    typedef NSProgress *(*SignFiles)(id, SEL, NSArray *, void (^)(BOOL, NSError *));
+    SignFiles sign = (SignFiles)objc_msgSend;
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Update: user requested installed module signing"];
+    sign(utils, selector, @[[NSURL fileURLWithPath:target]], ^(BOOL success, NSError *error) {
+        if (!success || error) {
+            [self finishInstall:completion error:error ?: [self error:8 description:@"模块签名失败，请重试"]];
+            return;
+        }
+        [[LCOSLogManager sharedManager] forceLog:@"LCOS Update: installed module signed by user"];
+        [self finishInstall:completion error:nil];
     });
 }
 
@@ -256,14 +264,20 @@ static NSString *const kLCOSUpdateErrorDomain = @"LCOSUpdateError";
     NSString *target = [directory stringByAppendingPathComponent:@"LCOS.dylib"];
     NSURL *targetURL = [NSURL fileURLWithPath:target];
     NSURL *stagingURL = [NSURL fileURLWithPath:staging];
-    NSString *backup = [directory stringByAppendingPathComponent:@"LCOS.dylib.backup"];
+    NSString *version = self.currentVersion;
+    NSString *backupName = [NSString stringWithFormat:@"LCOS-%@.dylib.backup", version];
+    NSString *backup = [directory stringByAppendingPathComponent:backupName];
+    for (NSString *name in [fm contentsOfDirectoryAtPath:directory error:nil]) {
+        if ([name hasPrefix:@"LCOS-"] && [name hasSuffix:@".dylib.backup"] && ![name isEqualToString:backupName]) {
+            [fm removeItemAtPath:[directory stringByAppendingPathComponent:name] error:nil];
+        }
+    }
     [fm removeItemAtPath:backup error:nil];
+    [fm removeItemAtPath:[directory stringByAppendingPathComponent:@"LCOS.dylib.backup"] error:nil];
     if (![fm copyItemAtPath:target toPath:backup error:error]) {
         [fm removeItemAtPath:staging error:nil];
         return NO;
     }
-    // Copy the verified download over the existing module rather than moving
-    // it first: a failed write cannot leave the target missing.
     if (![fm removeItemAtPath:target error:error] || ![fm copyItemAtURL:stagingURL toURL:targetURL error:error]) {
         NSError *restoreError = nil;
         [fm removeItemAtPath:target error:nil];
@@ -274,7 +288,7 @@ static NSString *const kLCOSUpdateErrorDomain = @"LCOSUpdateError";
         return NO;
     }
     [fm removeItemAtPath:staging error:nil];
-    [[LCOSLogManager sharedManager] forceLog:@"LCOS Update: installed signed LCOS.dylib; previous version backed up"];
+    [[LCOSLogManager sharedManager] forceLog:@"LCOS Update: installed LCOS.dylib; previous version backed up"];
     return YES;
 }
 
