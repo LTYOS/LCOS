@@ -5,6 +5,7 @@
 
 #import "LCOSAppModel.h"
 #import "LCOSLogManager.h"
+#import "LCOSLaunchBridge.h"
 #import <objc/runtime.h>
 #import <objc/message.h>
 
@@ -87,7 +88,7 @@ static NSString *const kLCOSAppsDirectory = @"Applications";
         [NSURLQueryItem queryItemWithName:@"bundle-name" value:bundleName]];
     if (_containerFolderName.length > 0) {
         [items addObject:[NSURLQueryItem queryItemWithName:@"container-folder-name"
-                                                     value:_containerFolderName]];
+                                                      value:_containerFolderName]];
     }
     components.queryItems = items;
     return components.URL;
@@ -160,6 +161,7 @@ static NSString *const kLCOSAppsDirectory = @"Applications";
 - (void)launch {
     if (_isLaunching) return;
     _isLaunching = YES;
+    [self ensureContainerIfNeeded];
     self.launchFromLCOSDesktop = [NSUserDefaults.standardUserDefaults boolForKey:@"LCOSLaunchFromDesktop"];
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"LCOSLaunchFromDesktop"];
 
@@ -168,7 +170,7 @@ static NSString *const kLCOSAppsDirectory = @"Applications";
         _bundlePath.lastPathComponent, _containerFolderName ?: @"(default)"]];
 
     NSURLComponents *components = [NSURLComponents componentsWithURL:self.launchURL
-                                             resolvingAgainstBaseURL:NO];
+                                              resolvingAgainstBaseURL:NO];
     if (!components) {
         [[LCOSLogManager sharedManager] forceLog:@"LCOSAppModel: invalid launch URL"];
         _isLaunching = NO;
@@ -178,17 +180,17 @@ static NSString *const kLCOSAppsDirectory = @"Applications";
     // LCSharedUtils writes the selected app/container and starts the guest itself.
     Class sharedUtils = NSClassFromString(@"LCSharedUtils");
     SEL directSelector = @selector(launchToGuestAppWithURL:);
-    // Initialize the first container before restarting, like LCAppModel.runApp.
-    [self ensureContainerIfNeeded];
     if (_containerFolderName.length > 0 && [sharedUtils respondsToSelector:directSelector]) {
-        if ([sharedUtils respondsToSelector:NSSelectorFromString(@"lcosRecordLaunchSource:")])
-            ((void (*)(id, SEL, BOOL))objc_msgSend)(sharedUtils, NSSelectorFromString(@"lcosRecordLaunchSource:"), self.launchFromLCOSDesktop);
+        // The shared credential is written before the host launch. Its UUID is
+        // checked again at the real task callback, so stale sources cannot
+        // classify a later native app as an LCOS task.
+        LCOSRecordLaunchSource(_containerFolderName, self.launchFromLCOSDesktop);
         components.scheme = [self hostURLScheme];
         NSUserDefaults *defaults = [self hostDefaults];
         [defaults setBool:NO forKey:@"LCOpenSideStore"];
         [defaults removeObjectForKey:@"launchAppUrlScheme"];
         BOOL accepted = ((BOOL (*)(id, SEL, NSURL *))objc_msgSend)(sharedUtils,
-                                                                    directSelector, components.URL);
+                                                                     directSelector, components.URL);
         [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
             @"LCOSAppModel: LCSharedUtils launch accepted=%d url=%@", accepted, components.URL]];
         if (!accepted) {
@@ -200,6 +202,7 @@ static NSString *const kLCOSAppsDirectory = @"Applications";
     }
 
     // Host UI handles the deep link in LCAppListView and initializes missing containers.
+    LCOSRecordLaunchSource(_containerFolderName, self.launchFromLCOSDesktop);
     components.scheme = [self hostURLScheme];
     NSURL *url = components.URL;
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:
@@ -212,7 +215,7 @@ static NSString *const kLCOSAppsDirectory = @"Applications";
 }
 
 + (NSArray<LCOSAppModel *> *)allInstalledApps {
-    NSMutableArray *apps = [NSMutableArray array];
+    NSMutableArray<LCOSAppModel *> *apps = [NSMutableArray array];
     
     // LiveContainer 应用安装在 Documents/Applications/
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
