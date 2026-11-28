@@ -1,13 +1,7 @@
 #pragma once
 
 #import "LCOSTaskRegistry.h"
-
-@interface LCOSTaskRecord : NSObject
-@property (nonatomic, weak) UIView *view;
-@property (nonatomic, strong) UIViewController *controller;
-@property (nonatomic, assign) BOOL fromLCOS;
-@property (nonatomic, copy) NSString *uuid;
-@end
+#import "LCOSTaskRecord.h"
 
 @interface LCOSTaskRegistry ()
 @property (nonatomic, strong) NSMutableArray<LCOSTaskRecord *> *records;
