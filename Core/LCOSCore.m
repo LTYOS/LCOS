@@ -144,6 +144,7 @@ static BOOL LCOSIsLiveContainerHost(void) {
 // Class extension for private properties
 @interface LCOSCore ()
 - (void)finishHidingLauncher;
+- (void)cancelDockPreparation;
 - (BOOL)isBackgroundVisible;
 - (UIView *)navigationTouchZone;
 @property (nonatomic, strong) UILongPressGestureRecognizer *overlayLongPressGesture;
@@ -175,7 +176,15 @@ static void lcos_makeKeyAndVisible(id self, SEL _cmd) {
             LCOSCore *core = [LCOSCore sharedInstance];
             if (!core.overlayWindow) [core initialize];
             if (LCOSAutoRestoreEnabled() && !core.isBackgroundVisible && [[NSUserDefaults standardUserDefaults] boolForKey:@"LCOSLauncherVisible"] && !core.isLauncherVisible) {
-                [core showLauncherImmediately];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    if (core.isLauncherVisible || core.isBackgroundVisible) return;
+                    @try {
+                        [core showLauncherImmediately];
+                    } @catch (NSException *exception) {
+                        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Launcher: startup restore exception %@", exception.reason]];
+                        [core cancelDockPreparation];
+                    }
+                });
             }
         }
     }
