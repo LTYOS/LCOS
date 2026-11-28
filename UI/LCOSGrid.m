@@ -226,7 +226,15 @@
 }
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
-    return gestureRecognizer == self.scrollView.panGestureRecognizer || otherGestureRecognizer == self.scrollView.panGestureRecognizer;
+    if (gestureRecognizer == self.scrollView.panGestureRecognizer || otherGestureRecognizer == self.scrollView.panGestureRecognizer) {
+        // Single-finger horizontal paging belongs to the grid. Do not let a
+        // three-finger shell gesture delay or replace it.
+        UIPanGestureRecognizer *pan = self.scrollView.panGestureRecognizer;
+        if (pan.numberOfTouches != 1) return NO;
+        CGPoint velocity = [pan velocityInView:self.scrollView];
+        return fabs(velocity.x) > fabs(velocity.y);
+    }
+    return NO;
 }
 
 - (void)gridTapGestureRecognized:(UITapGestureRecognizer *)gesture {
