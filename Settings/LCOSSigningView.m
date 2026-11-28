@@ -7,7 +7,7 @@
 @property (nonatomic, strong) UIButton *signButton;
 @property (nonatomic, strong) UIButton *doneButton;
 @property (nonatomic, assign) BOOL signing;
-@property (nonatomic, assign) BOOL signed;
+@property (nonatomic, assign) BOOL signCompleted;
 @end
 
 @implementation LCOSSigningView
@@ -56,7 +56,7 @@
 }
 
 - (void)signTapped {
-    if (self.signing || self.signed) return;
+    if (self.signing || self.signCompleted) return;
     self.signing = YES;
     self.signButton.enabled = NO;
     self.signButton.configuration.title = @"正在签名…";
@@ -72,7 +72,7 @@
             strongSelf.statusLabel.text = [NSString stringWithFormat:@"签名失败：%@\n请重试，或点击完成返回设置。", error.localizedDescription];
             return;
         }
-        strongSelf.signed = YES;
+        strongSelf.signCompleted = YES;
         strongSelf.signButton.configuration.title = @"已签名";
         strongSelf.signButton.enabled = NO;
         strongSelf.statusLabel.text = @"签名成功。请点击完成返回设置，然后重启 LiveContainer。";
