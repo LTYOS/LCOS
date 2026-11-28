@@ -284,7 +284,7 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
 - (void)downloadRelease:(NSDictionary *)release {
     self.updateInProgress = YES;
     self.updateButton.enabled = NO;
-    self.updateStatusLabel.text = @"正在下载、校验并签名模块…";
+    self.updateStatusLabel.text = @"正在下载、校验并覆盖模块…";
     [LCOSUpdateManager.shared downloadAndInstallRelease:release completion:^(NSError *error) {
         self.updateInProgress = NO;
         self.updateButton.enabled = YES;
@@ -293,8 +293,38 @@ static NSString *const kLCOSAutoRestoreKey = @"LCOSAutoRestoreDesktop";
             [self presentAlert:@"更新未完成" message:error.localizedDescription];
             return;
         }
-        self.updateStatusLabel.text = @"下载成功，已覆盖模块。请在 LiveContainer 模块页确认签名后重启。";
-        [self presentAlert:@"下载成功" message:@"已覆盖 LCOS.dylib，并保留旧版备份。\n已调用 LiveContainer 签名接口，请签名后重启 LiveContainer。\n点击完成后返回设置。"];
+        self.updateStatusLabel.text = @"下载成功，已覆盖模块。请先点击“签名”，完成后重启 LiveContainer。";
+        __weak LCOSSettingsView *weakSelf = self;
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"下载成功" message:@"已覆盖 LCOS.dylib，并仅保留更新前一份带版本号的备份。\n请先签名，再点击完成返回设置。" preferredStyle:UIAlertControllerStyleAlert];
+        __block UIAlertAction *signAction = nil;
+        signAction = [UIAlertAction actionWithTitle:@"签名" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            // UIAlertAction handlers normally dismiss their alert. Reinstate the
+            // same controller to keep signing as an explicit, retryable step.
+            void (^presentForSigning)(void) = ^{
+                LCOSSettingsView *strongSelf = weakSelf;
+                if (!strongSelf || strongSelf.presentedViewController) return;
+                [strongSelf presentViewController:alert animated:NO completion:nil];
+            };
+            signAction.enabled = NO;
+            self.updateStatusLabel.text = @"正在调用 LiveContainer 签名接口…";
+            [LCOSUpdateManager.shared signInstalledPluginWithCompletion:^(NSError *error) {
+                if (error) {
+                    signAction.enabled = YES;
+                    self.updateStatusLabel.text = error.localizedDescription;
+                    alert.message = [NSString stringWithFormat:@"签名失败：%@\n请重试，或点击完成返回设置。", error.localizedDescription];
+                    presentForSigning();
+                    return;
+                }
+                [signAction setValue:@"已签名" forKey:@"title"];
+                alert.title = @"已签名";
+                alert.message = @"签名成功。请点击完成返回设置，然后重启 LiveContainer。";
+                self.updateStatusLabel.text = @"已签名。请点击完成，然后重启 LiveContainer。";
+                presentForSigning();
+            }];
+        }];
+        [alert addAction:signAction];
+        [alert addAction:[UIAlertAction actionWithTitle:@"完成" style:UIAlertActionStyleCancel handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
     }];
 }
 
