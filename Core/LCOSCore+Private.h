@@ -8,7 +8,8 @@
 #import "LCOSShellController.h"
 #import "LCOSPassThroughWindow.h"
 
-@class LCOSNavigationTouchZone;
+@interface LCOSNavigationTouchZone : UIView
+@end
 
 extern NSString *const kLCOSLauncherVisibleKey;
 
@@ -35,6 +36,8 @@ extern NSString *const kLCOSLauncherVisibleKey;
 - (void)updateInteractionState;
 - (void)saveLauncherState;
 - (void)layoutRadiusChanged;
+- (void)registerGesturesOnOverlayWindow;
+- (void)installNativeDockGestureIfNeeded;
 - (BOOL)isBackgroundVisible;
 - (UIView *)navigationTouchZone;
 - (void)handleThreeFingerLongPress:(UILongPressGestureRecognizer *)gesture;

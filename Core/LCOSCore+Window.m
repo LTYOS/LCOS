@@ -4,7 +4,7 @@
 // Transparent regions pass touches to the native host. Only an active shell's
 // background or actual navigation zone may consume touches.
 
-@interface LCOSNavigationTouchZone : UIView <UIGestureRecognizerDelegate>
+@interface LCOSNavigationTouchZone () <UIGestureRecognizerDelegate>
 @property (nonatomic, copy) void (^onPan)(UIPanGestureRecognizer *gesture);
 @property (nonatomic, copy) void (^onTap)(void);
 @end
