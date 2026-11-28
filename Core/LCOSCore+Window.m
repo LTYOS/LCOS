@@ -58,10 +58,12 @@
         return [super hitTest:point withEvent:event];
     }
     // Match the actual vertical navigation zone, not an invisible full-height strip.
-    if (!self.launcherContainer && self.navigationTouchZone && !self.navigationTouchZone.hidden) {
+    if (self.navigationTouchZone && !self.navigationTouchZone.hidden) {
         CGPoint localPoint = [self.navigationTouchZone convertPoint:point fromView:self];
         if ([self.navigationTouchZone pointInside:localPoint withEvent:event]) {
-            return [super hitTest:point withEvent:event];
+            // Shell edge zones are siblings of the launcher, not its children.
+            // Route their narrow touch region explicitly before grid hit-testing.
+            return self.navigationTouchZone;
         }
     }
     // 1. While the desktop is visible, hit-test its own view hierarchy only.
