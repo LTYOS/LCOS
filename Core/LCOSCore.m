@@ -57,23 +57,6 @@ static void lcos_makeKeyAndVisible(id self, SEL _cmd) {
     if (orig_makeKeyAndVisible) orig_makeKeyAndVisible(self, _cmd);
 }
 
-static void LCOSRecordLaunchSource(id self, SEL _cmd, BOOL fromLCOS) {
-    SEL groupSelector = NSSelectorFromString(@"appGroupPath");
-    if (![self respondsToSelector:groupSelector]) return;
-    NSURL *group = ((id (*)(id, SEL))objc_msgSend)(self, groupSelector);
-    NSString *path = [group.path stringByAppendingPathComponent:@"LiveContainer/LCOSLaunchSource.plist"];
-    [NSFileManager.defaultManager createDirectoryAtPath:path.stringByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:nil];
-    [@{@"source": fromLCOS ? @"lcos" : @"native"} writeToFile:path atomically:YES];
-}
-
-static void LCOSInstallLaunchSourceHook(void) {
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        Class utils = NSClassFromString(@"LCSharedUtils");
-        class_addMethod(utils, NSSelectorFromString(@"lcosRecordLaunchSource:"), (IMP)LCOSRecordLaunchSource, "v@:B");
-    });
-}
-
 @implementation LCOSCore
 
 + (void)load {
@@ -175,7 +158,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         }
     }
     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: initialize START"];
-    if (!self.isGuestNavigation) { (void)[LCOSTaskRegistry shared]; LCOSInstallLaunchSourceHook(); }
+    if (!self.isGuestNavigation) { (void)[LCOSTaskRegistry shared]; }
     
     // Check if window scene is ready
     if (![self hasValidWindowScene]) {
@@ -243,6 +226,7 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 
 
 
+
 - (void)updateInteractionState {
     self.nativeDockGesture.enabled = self.dockTransitionActive || (!self.isLauncherVisible && !self.isBackgroundVisible);
     self.launcherDismissGesture.enabled = self.isLauncherVisible && !self.dockTransitionActive && !self.isBackgroundVisible;
@@ -275,7 +259,6 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     UINavigationController *navigation = [[UINavigationController alloc] initWithRootViewController:settings];
     [self.overlayWindow.rootViewController presentViewController:navigation animated:YES completion:nil];
 }
-
 
 
 
