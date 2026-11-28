@@ -80,14 +80,17 @@
             return [super hitTest:point withEvent:event];
         }
     }
-    // 1. If launcher container is visible and touch is on it, let it handle normally
+    // 1. While the desktop is visible, hit-test its own view hierarchy only.
+    // Calling super here would also include sibling NativeShell edge zones,
+    // allowing the inactive shell to steal navigation and background gestures.
     if (self.launcherContainer && [self.launcherContainer isViewLoaded]) {
         UIView *launcherView = self.launcherContainer.view;
         if (launcherView && !launcherView.hidden && launcherView.alpha > 0.01) {
             CGPoint localPoint = [launcherView convertPoint:point fromView:self];
             if (CGRectContainsPoint(launcherView.bounds, localPoint)) {
-                [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS PassThroughWindow: hitTest -> launcherContainer (point=%@)", NSStringFromCGPoint(point)]];
-                return [super hitTest:point withEvent:event]; // Normal hit test for launcher
+                UIView *target = [launcherView hitTest:localPoint withEvent:event];
+                [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS PassThroughWindow: launcher owns touch target=%@", target.class]];
+                return target ?: launcherView;
             }
         }
     }
