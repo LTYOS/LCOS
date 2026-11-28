@@ -354,9 +354,19 @@
     NSMutableArray<UIView *> *tasks = [[self.tasks runningTasksFromLCOS:self.fromLCOS] mutableCopy];
     if (presentedTask && [self.tasks isTaskRunning:presentedTask] && ![tasks containsObject:presentedTask]) [tasks addObject:presentedTask];
     [self.switcher setLiveTaskViews:tasks];
-    UIView *host = presentedTask.superview;
+    // A desktop switcher has the desktop as its backdrop, not the foreground
+    // guest app's window. NativeShell keeps its existing task-host backdrop.
+    UIView *host = self.fromLCOS ? self.launcherView : presentedTask.superview;
     [self.switcher setBackdropActive:!host];
     self.hostBlurViews = [NSMutableArray array];
+    if (self.fromLCOS && self.launcherView) {
+        UIVisualEffectView *blur = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark]];
+        blur.frame = self.launcherView.bounds;
+        blur.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        blur.userInteractionEnabled = NO;
+        [self.launcherView addSubview:blur];
+        [self.hostBlurViews addObject:blur];
+    }
     NSMutableArray<UIView *> *hosts = [NSMutableArray array];
     for (UIView *task in self.switcher.taskViews) {
         UIView *taskHost = task.superview;
