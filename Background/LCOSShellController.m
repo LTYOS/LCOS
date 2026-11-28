@@ -320,6 +320,7 @@
 }
 
 - (void)showBackground {
+    if (!self.fromLCOS && ![NSUserDefaults.standardUserDefaults boolForKey:@"LCOSNativeNavigationEnabled"] && [NSUserDefaults.standardUserDefaults objectForKey:@"LCOSNativeNavigationEnabled"]) return;
     if (self.isBackgroundVisible) return;
     self.isBackgroundVisible = YES;
     UIView *presentedTask = self.activeTask;
