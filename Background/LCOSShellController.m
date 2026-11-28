@@ -4,6 +4,7 @@
 #import "LCOSNavigationBar.h"
 #import "LCOSLogManager.h"
 #import "LCOSPassThroughWindow.h"
+#import "LCOSLaunchBridge.h"
 
 @interface LCOSEdgeZone : UIView <UIGestureRecognizerDelegate>
 @property (nonatomic, copy) void (^onPan)(UIPanGestureRecognizer *gesture);
@@ -101,8 +102,7 @@
 }
 
 - (void)updateNavigation {
-    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-    BOOL nativeNavigationEnabled = [defaults objectForKey:@"LCOSNativeNavigationEnabled"] == nil || [defaults boolForKey:@"LCOSNativeNavigationEnabled"];
+    BOOL nativeNavigationEnabled = LCOSNativeInteractionEnabled();
     if (!self.fromLCOS && !nativeNavigationEnabled) {
         // This switch owns only the native navigation strip and switcher.
         // Dock's independent upward gesture remains available.
@@ -286,8 +286,8 @@
         task.alpha = 0;
         task.userInteractionEnabled = NO;
     }
-    self.activeTask = nil;
-    self.hasActiveTask = NO;
+    self.activeTask = returningTask;
+    self.hasActiveTask = returningTask != nil;
     [self restoreNativeWindowInteraction];
     [self resetTransition];
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"%@: returned home, tasks hidden", self.name]];
@@ -327,7 +327,7 @@
 }
 
 - (void)showBackground {
-    if (!self.fromLCOS && ![NSUserDefaults.standardUserDefaults boolForKey:@"LCOSNativeNavigationEnabled"] && [NSUserDefaults.standardUserDefaults objectForKey:@"LCOSNativeNavigationEnabled"]) return;
+    if (!self.fromLCOS && !LCOSNativeInteractionEnabled()) return;
     if (self.isBackgroundVisible) return;
     self.isBackgroundVisible = YES;
     UIView *presentedTask = self.activeTask;
@@ -365,7 +365,8 @@
     // A desktop switcher has the desktop as its backdrop, not the foreground
     // guest app's window. NativeShell keeps its existing task-host backdrop.
     UIView *host = self.fromLCOS ? self.launcherView : presentedTask.superview;
-    [self.switcher setBackdropActive:!host];
+    // Never blur an arbitrary lower guest window as an LCOS desktop backdrop.
+    [self.switcher setBackdropActive:self.fromLCOS || !host];
     self.hostBlurViews = [NSMutableArray array];
     if (self.fromLCOS && self.launcherView) {
         UIVisualEffectView *blur = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark]];
