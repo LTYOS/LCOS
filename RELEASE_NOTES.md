@@ -1,9 +1,9 @@
-## 本次更新（v1.0.95）
+## 本次更新（v1.0.96）
 
-- 修复 `LCOSGrid` 将 UIScrollView 内置 pan 手势代理替换为自身，触发 `NSInvalidArgumentException` 并导致桌面黑屏、设置闪退的问题。
-- 保留 `scrollView.delegate` 用于分页回调，不再改动 UIScrollView 必须自行持有的内置手势代理。
-- Dock 桌面创建失败时清除半挂载状态和持久化“桌面可见”标记，恢复 LiveContainer 原生界面，避免下次启动重复恢复异常桌面。
-- 启动自动恢复改为下一主队列执行，并加入异常回退，避免单个桌面异常阻止 LiveContainer 打开。
-- 保持现有 Dock 手势、后台门禁、真实后台卡片和返回逻辑不变。
+- 修复 LCOS 桌面右缘手势误路由到 NativeShell 的问题；桌面或桌面任务期间禁用 Native 导航触摸区，避免两套导航互相覆盖。
+- LCOSShell 仅在存在真实桌面任务时开放导航；隐藏导航区同时停止接收触摸，不再由视图层级顺序决定手势归属。
+- 任务登记优先使用已记录的 LCOS 启动来源，避免启动时桌面隐藏导致桌面任务被误登记为 Native 任务或无法激活。
+- 修复桌面三指退出与单指横向翻页的协调，非三指手势不再阻塞 Grid 中间区域翻页。
+- 保持 LiveContainer 原生导航与后台逻辑不变；不使用截图冒充真实 LCOS 后台任务。
 
 > 更新后请在 LiveContainer 的模块页面确认签名，然后重启 LiveContainer。
