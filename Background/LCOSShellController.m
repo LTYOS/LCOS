@@ -102,7 +102,7 @@
 
 - (void)updateNavigation {
     BOOL allowed = !self.isBackgroundVisible && (!self.fromLCOS || self.hasActiveTask);
-    if (!self.fromLCOS && (self.launcherView || self.tasks.activeTaskFromLCOS)) allowed = NO;
+    if (!self.fromLCOS && (self.launcherView || [self.tasks activeTaskFromLCOS:YES])) allowed = NO;
     self.edgeZone.hidden = !allowed;
     // Hidden zones must not compete for the other shell's edge gestures.
     self.edgeZone.userInteractionEnabled = allowed;
