@@ -1373,6 +1373,10 @@ static BOOL LCOSAutoRestoreEnabled(void) {
     self.dockTransitionActive = NO;
     self.launcherTransitionActive = NO;
     self.isLauncherVisible = NO;
+    // A failed preparation must never restore this partial desktop on the next
+    // LiveContainer launch. Leave the native UI available instead.
+    [NSUserDefaults.standardUserDefaults setBool:NO forKey:kLCOSLauncherVisibleKey];
+    [NSUserDefaults.standardUserDefaults synchronize];
     [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSLauncherGestureActive" object:@NO];
     if (self.launcherContainer) [self finishHidingLauncher];
     [self updateInteractionState];
