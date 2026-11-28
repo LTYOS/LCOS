@@ -10,6 +10,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)checkForUpdatesWithCompletion:(void (^)(NSDictionary * _Nullable release, NSError * _Nullable error))completion;
 - (void)ignoreRelease:(NSDictionary *)release;
 - (void)downloadAndInstallRelease:(NSDictionary *)release completion:(void (^)(NSError * _Nullable error))completion;
+- (void)signInstalledPluginWithCompletion:(void (^)(NSError * _Nullable error))completion;
 @end
 
 NS_ASSUME_NONNULL_END
