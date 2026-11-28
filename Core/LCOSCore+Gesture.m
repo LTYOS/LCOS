@@ -40,7 +40,8 @@
                 // Present settings on overlay window's root view controller (within overlay window)
                 // This keeps settings inside overlay window layer (L1-b), not on LiveContainer window
                 if (self.overlayWindow && self.overlayWindow.rootViewController) {
-                    [self.overlayWindow.rootViewController presentViewController:settingsView animated:YES completion:nil];
+                    UINavigationController *navigation = [[UINavigationController alloc] initWithRootViewController:settingsView];
+                    [self.overlayWindow.rootViewController presentViewController:navigation animated:YES completion:nil];
                     [[LCOSLogManager sharedManager] forceLog:@"LCOSCore: Settings presented on overlay window"];
                 }
             }
@@ -128,19 +129,26 @@
 - (void)handleLauncherDismissGesture:(UIPanGestureRecognizer *)gesture {
     if (self.isBackgroundVisible || !self.isLauncherVisible) return;
     if (gesture.state == UIGestureRecognizerStateBegan) {
-        if (![self canSwitchShellFromLCOS:YES]) {
+        if (gesture.numberOfTouches != 3 || ![self canSwitchShellFromLCOS:YES]) {
+            self.launcherDismissActive = NO;
+            [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSLauncherGestureActive" object:@NO];
             gesture.enabled = NO;
             gesture.enabled = YES;
             return;
         }
+        self.launcherDismissActive = YES;
         [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSLauncherGestureActive" object:@YES];
         [self setLauncherRoundedCorners:YES];
     }
+    // A one-finger page swipe must never translate the desktop, even if UIKit
+    // has provisionally begun the three-finger recognizer.
+    if (!self.launcherDismissActive) return;
     CGFloat translation = [gesture translationInView:self.launcherContainer.view].y;
     if (gesture.state == UIGestureRecognizerStateChanged) {
         self.launcherTransitionActive = YES;
         self.launcherContainer.view.transform = CGAffineTransformMakeTranslation(0, MAX(0.0, translation));
-    } else if (gesture.state == UIGestureRecognizerStateEnded || gesture.state == UIGestureRecognizerStateCancelled) {
+    } else if (gesture.state == UIGestureRecognizerStateEnded || gesture.state == UIGestureRecognizerStateCancelled || gesture.state == UIGestureRecognizerStateFailed) {
+        self.launcherDismissActive = NO;
         [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSLauncherGestureActive" object:@NO];
         BOOL shouldClose = gesture.state == UIGestureRecognizerStateEnded && translation > self.launcherContainer.view.bounds.size.height * 0.18;
         if (shouldClose) {
@@ -165,9 +173,12 @@
         return upward;
     }
     if (gestureRecognizer == self.launcherDismissGesture) {
-        // Never compete with one-finger horizontal paging in the app grid.
-        // The three-finger dismiss gesture is only eligible for three touches.
-        return gestureRecognizer.numberOfTouches == 3;
+        // The exit gesture is a three-finger downward pan, not a horizontal
+        // one-finger page swipe or a three-finger long press for settings.
+        UIPanGestureRecognizer *pan = (UIPanGestureRecognizer *)gestureRecognizer;
+        if (pan.numberOfTouches != 3) return NO;
+        CGPoint velocity = [pan velocityInView:self.launcherContainer.view];
+        return velocity.y > 10 && fabs(velocity.y) > fabs(velocity.x);
     }
     return YES;
 }
@@ -178,6 +189,7 @@
 }
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+    if (gestureRecognizer == self.launcherDismissGesture || otherGestureRecognizer == self.launcherDismissGesture) return NO;
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOSCore: shouldRecognizeSimultaneously %@ with %@", gestureRecognizer, otherGestureRecognizer]];
     return YES;
 }

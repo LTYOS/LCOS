@@ -24,6 +24,7 @@ extern NSString *const kLCOSLauncherVisibleKey;
 @property (nonatomic, assign) BOOL dockEndedWhilePreparing;
 @property (nonatomic, assign) BOOL dockShouldOpenAfterPreparing;
 @property (nonatomic, assign) BOOL launcherTransitionActive;
+@property (nonatomic, assign) BOOL launcherDismissActive;
 @property (nonatomic, assign) CGPoint dockGestureStart;
 @property (nonatomic, strong) LCOSNavigationBar *navigationBar;
 @property (nonatomic, strong) LCOSBackgroundView *backgroundView;
@@ -46,5 +47,6 @@ extern NSString *const kLCOSLauncherVisibleKey;
 - (void)prepareLauncherForInteractivePresentation;
 - (void)completeDockPresentation:(BOOL)shouldOpen;
 - (void)finishInteractivePresentation;
+- (void)handleLauncherDismissGesture:(UIPanGestureRecognizer *)gesture;
 - (BOOL)canSwitchShellFromLCOS:(BOOL)fromLCOS;
 @end
