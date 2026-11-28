@@ -2,6 +2,11 @@
 #import "LCOSLogManager.h"
 #import <objc/message.h>
 
+@interface UIViewController (LCOSTaskLifecycle)
+- (BOOL)isAppTerminationRequested;
+- (id)appSceneVC;
+@end
+
 @implementation LCOSTaskRegistry (Records)
 
 - (LCOSTaskRecord *)recordForTask:(UIView *)view {
@@ -25,6 +30,16 @@
     if (!controller) return;
     for (LCOSTaskRecord *record in [self.records copy]) {
         if (record.controller == controller) {
+            BOOL running = NO;
+            if ([controller respondsToSelector:@selector(appSceneVC)]) {
+                id scene = ((id (*)(id, SEL))objc_msgSend)(controller, @selector(appSceneVC));
+                SEL runningSelector = NSSelectorFromString(@"isAppRunning");
+                if ([scene respondsToSelector:runningSelector]) running = ((BOOL (*)(id, SEL))objc_msgSend)(scene, runningSelector);
+            }
+            if ([controller respondsToSelector:@selector(isAppTerminationRequested)] && !controller.isAppTerminationRequested && running) {
+                [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Task: unexpected termination screen retained UUID=%@", record.uuid ?: @"pending"]];
+                continue;
+            }
             [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Task: verified exit callback UUID=%@", record.uuid ?: @"pending"]];
             [self unregisterTask:record.view];
         }
@@ -76,11 +91,18 @@
 }
 
 - (BOOL)closeTask:(UIView *)view {
-    id controller = [self controllerForTask:view];
-    SEL close = NSSelectorFromString(@"closeWindow");
-    if (![controller respondsToSelector:close]) return NO;
-    [self unregisterTask:view];
-    ((void (*)(id, SEL))objc_msgSend)(controller, close);
+    LCOSTaskRecord *record = [self recordForTask:view];
+    id controller = record.controller ?: [self controllerForTask:view];
+    SEL minimize = NSSelectorFromString(@"minimizeWindow");
+    if (![controller respondsToSelector:minimize]) return NO;
+    // Closing an LCOS card suspends presentation; it must not terminate the
+    // real app. closeWindow is reserved for an explicit user quit action.
+    view.hidden = YES;
+    view.userInteractionEnabled = NO;
+    ((void (*)(id, SEL))objc_msgSend)(controller, minimize);
+    if (self.activeNativeTask == view) self.activeNativeTask = nil;
+    if (self.activeLCOSTask == view) self.activeLCOSTask = nil;
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Task: card minimized, app retained UUID=%@", record.uuid ?: @"pending"]];
     return YES;
 }
 
