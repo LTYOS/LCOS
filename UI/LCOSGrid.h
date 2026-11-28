@@ -11,6 +11,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property (nonatomic, strong) NSMutableArray *pages;
 @property (nonatomic, strong) NSMutableArray *currentPageItems;
+@property (nonatomic, strong, readonly) UIPanGestureRecognizer *pagingGestureRecognizer;
 
 /** 设置要显示的应用模型数组（会自动分页） */
 - (void)setApps:(NSArray<LCOSAppModel *> *)apps;
