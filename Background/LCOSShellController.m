@@ -408,10 +408,8 @@
 - (void)restoreNativeWindowInteraction {
     // Keep the real host window in place. Choosing an arbitrary visible window
     // and making it key can reorder LiveContainer's task and desktop layers.
-    UIWindow *window = self.overlay.windowScene.windows.firstObject;
-    if (window && window != self.overlay) {
-        window.hidden = NO;
-        window.alpha = 1;
+    for (UIWindow *window in self.overlay.windowScene.windows) {
+        if (window == self.overlay || window.hidden || window.alpha < 0.01) continue;
         window.userInteractionEnabled = YES;
     }
 }
