@@ -1476,6 +1476,11 @@ static BOOL LCOSAutoRestoreEnabled(void) {
         [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Dock: direction accepted=%d", upward]];
         return upward;
     }
+    if (gestureRecognizer == self.launcherDismissGesture) {
+        // Never compete with one-finger horizontal paging in the app grid.
+        // The three-finger dismiss gesture is only eligible for three touches.
+        return gestureRecognizer.numberOfTouches == 3;
+    }
     return YES;
 }
 
