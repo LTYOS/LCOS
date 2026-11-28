@@ -216,6 +216,8 @@
     [self scrollViewDidEndDecelerating:scrollView];
 }
 
+- (UIPanGestureRecognizer *)pagingGestureRecognizer { return self.scrollView.panGestureRecognizer; }
+
 - (void)setLauncherGestureActive:(BOOL)active {
     BOOL enabled = !active;
     // Reassigning scrollEnabled during an active pan can cancel an otherwise
