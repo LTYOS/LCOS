@@ -101,7 +101,14 @@
 }
 
 - (void)updateNavigation {
-    BOOL allowed = !self.isBackgroundVisible && (!self.fromLCOS || self.hasActiveTask);
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    BOOL nativeNavigationEnabled = [defaults objectForKey:@"LCOSNativeNavigationEnabled"] == nil || [defaults boolForKey:@"LCOSNativeNavigationEnabled"];
+    if (!self.fromLCOS && !nativeNavigationEnabled) {
+        // This switch owns only the native navigation strip and switcher.
+        // Dock's independent upward gesture remains available.
+        if (self.isBackgroundVisible) [self hideBackground];
+    }
+    BOOL allowed = !self.isBackgroundVisible && (self.fromLCOS || nativeNavigationEnabled);
     if (!self.fromLCOS && (self.launcherView || [self.tasks activeTaskFromLCOS:YES])) allowed = NO;
     self.edgeZone.hidden = !allowed;
     // Hidden zones must not compete for the other shell's edge gestures.
