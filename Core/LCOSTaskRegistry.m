@@ -100,9 +100,12 @@ static void LCOSAddRunningApp(id self, SEL _cmd, NSString *name, NSString *uuid,
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Task: host callback %@", view.class]];
     Class core = NSClassFromString(@"LCOSCore");
     id shared = ((id (*)(id, SEL))objc_msgSend)(core, @selector(sharedInstance));
-    BOOL fromLCOS = NO;
-    if ([shared respondsToSelector:NSSelectorFromString(@"isLauncherVisible")])
-        fromLCOS = ((BOOL (*)(id, SEL))objc_msgSend)(shared, NSSelectorFromString(@"isLauncherVisible"));
+    BOOL fromLCOS = [NSUserDefaults.standardUserDefaults boolForKey:@"LCOSLaunchFromDesktop"] ||
+        [NSUserDefaults.standardUserDefaults boolForKey:@"LCOSLauncherVisible"];
+    // Launching may hide the desktop before the task callback arrives. The
+    // persisted launch source keeps this task in LCOSShell, not NativeShell.
+    if (fromLCOS) [NSUserDefaults.standardUserDefaults removeObjectForKey:@"LCOSLaunchFromDesktop"];
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Task: launch source=%@", fromLCOS ? @"LCOSShell" : @"NativeShell"]];
     [[LCOSTaskRegistry shared] registerTask:view fromLCOS:fromLCOS];
 }
 
