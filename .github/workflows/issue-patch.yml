@@ -52,6 +52,10 @@ jobs:
               r"(?m)^LCOS-FILE:[ \t]*([^\r\n]+?)[ \t]*$",
               body,
           )
+          base_match = re.search(
+              r"(?m)^LCOS-BASE:[ \t]*([A-Za-z0-9._/-]+)[ \t]*$",
+              body,
+          )
           old_match = re.search(
               r"(?ms)^LCOS-OLD:[ \t]*\r?\n```[^\r\n]*\r?\n"
               r"(.*?)\r?\n```[ \t]*\r?\n(?=LCOS-NEW:)",
@@ -86,6 +90,18 @@ jobs:
               print(f"Unsafe target path: {relative_path}", file=sys.stderr)
               sys.exit(1)
 
+          base = base_match.group(1) if base_match else "main"
+          if (
+              base.startswith("-")
+              or base.startswith("/")
+              or base.endswith("/")
+              or ".." in base
+              or "@{" in base
+              or base == "HEAD"
+          ):
+              print(f"Invalid base branch: {base}", file=sys.stderr)
+              sys.exit(1)
+
           destination = pathlib.Path.cwd().joinpath(*target.parts)
           if not destination.is_file():
               print(f"Target file does not exist: {relative_path}", file=sys.stderr)
@@ -109,6 +125,7 @@ jobs:
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"path={relative_path}\n")
+              output.write(f"base={base}\n")
           PY
 
           if git diff --quiet -- "${{ steps.patch.outputs.path }}"; then
@@ -151,6 +168,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BRANCH: bot/issue-patch-${{ github.event.issue.number }}
+          LCOS_BASE: ${{ steps.patch.outputs.base }}
           TARGET_PATH: ${{ steps.patch.outputs.path }}
         shell: bash
         run: |
@@ -160,6 +178,7 @@ jobs:
           自动应用 Issue #${{ github.event.issue.number }} 的局部代码替换。
 
           - 文件：\`$TARGET_PATH\`
+          - Base：\`$LCOS_BASE\`
           - 来源：${{ github.event.issue.html_url }}
           - 旧代码必须且只能匹配一次，否则不会提交。
           - 请人工 Review 后再合并。
@@ -167,7 +186,7 @@ jobs:
 
           PR_URL=$(gh pr create \
             --repo "${{ github.repository }}" \
-            --base main \
+            --base "$LCOS_BASE" \
             --head "$BRANCH" \
             --title "Issue #${{ github.event.issue.number }}：更新 $TARGET_PATH" \
             --body-file pr-body.md)
