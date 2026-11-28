@@ -101,7 +101,14 @@
 }
 
 - (void)updateNavigation {
-    BOOL allowed = !self.isBackgroundVisible && (!self.fromLCOS || self.hasActiveTask);
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    BOOL nativeNavigationEnabled = [defaults objectForKey:@"LCOSNativeNavigationEnabled"] == nil || [defaults boolForKey:@"LCOSNativeNavigationEnabled"];
+    if (!self.fromLCOS && !nativeNavigationEnabled) {
+        // This switch owns only the native navigation strip and switcher.
+        // Dock's independent upward gesture remains available.
+        if (self.isBackgroundVisible) [self hideBackground];
+    }
+    BOOL allowed = !self.isBackgroundVisible && (self.fromLCOS || nativeNavigationEnabled);
     if (!self.fromLCOS && (self.launcherView || [self.tasks activeTaskFromLCOS:YES])) allowed = NO;
     self.edgeZone.hidden = !allowed;
     // Hidden zones must not compete for the other shell's edge gestures.
@@ -320,6 +327,7 @@
 }
 
 - (void)showBackground {
+    if (!self.fromLCOS && ![NSUserDefaults.standardUserDefaults boolForKey:@"LCOSNativeNavigationEnabled"] && [NSUserDefaults.standardUserDefaults objectForKey:@"LCOSNativeNavigationEnabled"]) return;
     if (self.isBackgroundVisible) return;
     self.isBackgroundVisible = YES;
     UIView *presentedTask = self.activeTask;
@@ -354,9 +362,19 @@
     NSMutableArray<UIView *> *tasks = [[self.tasks runningTasksFromLCOS:self.fromLCOS] mutableCopy];
     if (presentedTask && [self.tasks isTaskRunning:presentedTask] && ![tasks containsObject:presentedTask]) [tasks addObject:presentedTask];
     [self.switcher setLiveTaskViews:tasks];
-    UIView *host = presentedTask.superview;
+    // A desktop switcher has the desktop as its backdrop, not the foreground
+    // guest app's window. NativeShell keeps its existing task-host backdrop.
+    UIView *host = self.fromLCOS ? self.launcherView : presentedTask.superview;
     [self.switcher setBackdropActive:!host];
     self.hostBlurViews = [NSMutableArray array];
+    if (self.fromLCOS && self.launcherView) {
+        UIVisualEffectView *blur = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark]];
+        blur.frame = self.launcherView.bounds;
+        blur.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        blur.userInteractionEnabled = NO;
+        [self.launcherView addSubview:blur];
+        [self.hostBlurViews addObject:blur];
+    }
     NSMutableArray<UIView *> *hosts = [NSMutableArray array];
     for (UIView *task in self.switcher.taskViews) {
         UIView *taskHost = task.superview;
@@ -390,10 +408,8 @@
 - (void)restoreNativeWindowInteraction {
     // Keep the real host window in place. Choosing an arbitrary visible window
     // and making it key can reorder LiveContainer's task and desktop layers.
-    UIWindow *window = self.overlay.windowScene.windows.firstObject;
-    if (window && window != self.overlay) {
-        window.hidden = NO;
-        window.alpha = 1;
+    for (UIWindow *window in self.overlay.windowScene.windows) {
+        if (window == self.overlay || window.hidden || window.alpha < 0.01) continue;
         window.userInteractionEnabled = YES;
     }
 }

@@ -217,12 +217,10 @@
 }
 
 - (void)setLauncherGestureActive:(BOOL)active {
-    self.scrollView.scrollEnabled = !active;
-    // Do not disable pan: changing enabled during recognition cancels an
-    // active finger sequence. scrollEnabled alone prevents icon paging.
-    // Keep pan enabled: disabling it cancels an active finger sequence.
-    // scrollEnabled suppresses paging; the tap callback checks this state
-    // before launching an icon instead of cancelling an in-flight recognizer.
+    BOOL enabled = !active;
+    // Reassigning scrollEnabled during an active pan can cancel an otherwise
+    // valid one-finger page swipe. Only change it on an actual state change.
+    if (self.scrollView.scrollEnabled != enabled) self.scrollView.scrollEnabled = enabled;
 }
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {

@@ -1,4 +1,4 @@
-#import "LCOSUpdateManager.h"
+#import "LCOSUpdateManager+Private.h"
 #import "LCOSLogManager.h"
 #import <objc/runtime.h>
 #import <objc/message.h>
@@ -8,11 +8,7 @@
 #endif
 __attribute__((used)) static const char kLCOSVersion[] = LCOS_VERSION_STRING;
 static NSString *const kLCOSIgnoredVersion = @"LCOSIgnoredReleaseVersion";
-static NSString *const kLCOSUpdateErrorDomain = @"LCOSUpdateError";
-
-@interface LCOSUpdateManager ()
-@property (nonatomic, copy) NSString *resolvedPluginDirectory;
-@end
+NSString *const kLCOSUpdateErrorDomain = @"LCOSUpdateError";
 
 @implementation LCOSUpdateManager
 
@@ -57,14 +53,12 @@ static NSString *const kLCOSUpdateErrorDomain = @"LCOSUpdateError";
     return NSOrderedSame;
 }
 
+
+
 - (void)checkForUpdatesWithCompletion:(void (^)(NSDictionary *, NSError *))completion {
     NSURL *url = [NSURL URLWithString:@"https://api.github.com/repos/LTYOS/LCOS/releases/latest"];
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
-    request.timeoutInterval = 20;
-    [request setValue:@"application/vnd.github+json" forHTTPHeaderField:@"Accept"];
-    [request setValue:@"LCOS-Updater" forHTTPHeaderField:@"User-Agent"];
     [[LCOSLogManager sharedManager] forceLog:@"LCOS Update: checking latest release"];
-    [[NSURLSession.sharedSession dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+    [self performCandidates:[self candidateURLsForOfficialURL:url] index:0 completion:^(NSData *data, NSURLResponse *response, NSError *error, NSUInteger route) {
         if (!completion) return;
         if (error) { [self finish:completion release:nil error:error]; return; }
         if (![response isKindOfClass:NSHTTPURLResponse.class]) {
@@ -103,7 +97,7 @@ static NSString *const kLCOSUpdateErrorDomain = @"LCOSUpdateError";
         [self finish:completion release:@{@"tag_name": tag, @"version": version,
             @"body": [json[@"body"] isKindOfClass:NSString.class] ? json[@"body"] : @"暂无更新说明",
             @"browser_download_url": downloadURL} error:nil];
-    }] resume];
+    }];
 }
 
 - (void)finish:(void (^)(NSDictionary *, NSError *))completion release:(NSDictionary *)release error:(NSError *)error {
@@ -208,13 +202,12 @@ static NSString *const kLCOSUpdateErrorDomain = @"LCOSUpdateError";
         completion([self error:3 description:@"下载地址无效"]); return;
     }
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Update: downloading %@", release[@"version"]]];
-    [[NSURLSession.sharedSession downloadTaskWithURL:url completionHandler:^(NSURL *location, NSURLResponse *response, NSError *error) {
+    [self performCandidates:[self candidateURLsForOfficialURL:url] index:0 completion:^(NSData *data, NSURLResponse *response, NSError *error, NSUInteger route) {
         if (!completion) return;
         if (error) { [self finishInstall:completion error:error]; return; }
         if (![response isKindOfClass:NSHTTPURLResponse.class] || ((NSHTTPURLResponse *)response).statusCode != 200) {
             [self finishInstall:completion error:[self error:4 description:@"下载失败，请检查网络后重试"]]; return;
         }
-        NSData *data = [NSData dataWithContentsOfURL:location];
         if (![self validBinary:data]) {
             [self finishInstall:completion error:[self error:5 description:@"下载内容不是有效的 LCOS 插件，未覆盖旧版本"]]; return;
         }
@@ -227,7 +220,7 @@ static NSString *const kLCOSUpdateErrorDomain = @"LCOSUpdateError";
         NSError *replaceError = nil;
         [self replaceStagedBinary:staging error:&replaceError];
         [self finishInstall:completion error:replaceError];
-    }] resume];
+    }];
 }
 
 - (void)signInstalledPluginWithCompletion:(void (^)(NSError *))completion {
@@ -258,39 +251,6 @@ static NSString *const kLCOSUpdateErrorDomain = @"LCOSUpdateError";
     });
 }
 
-- (BOOL)replaceStagedBinary:(NSString *)staging error:(NSError **)error {
-    NSFileManager *fm = NSFileManager.defaultManager;
-    NSString *directory = staging.stringByDeletingLastPathComponent;
-    NSString *target = [directory stringByAppendingPathComponent:@"LCOS.dylib"];
-    NSURL *targetURL = [NSURL fileURLWithPath:target];
-    NSURL *stagingURL = [NSURL fileURLWithPath:staging];
-    NSString *version = self.currentVersion;
-    NSString *backupName = [NSString stringWithFormat:@"LCOS-%@.dylib.backup", version];
-    NSString *backup = [directory stringByAppendingPathComponent:backupName];
-    for (NSString *name in [fm contentsOfDirectoryAtPath:directory error:nil]) {
-        if ([name hasPrefix:@"LCOS-"] && [name hasSuffix:@".dylib.backup"] && ![name isEqualToString:backupName]) {
-            [fm removeItemAtPath:[directory stringByAppendingPathComponent:name] error:nil];
-        }
-    }
-    [fm removeItemAtPath:backup error:nil];
-    [fm removeItemAtPath:[directory stringByAppendingPathComponent:@"LCOS.dylib.backup"] error:nil];
-    if (![fm copyItemAtPath:target toPath:backup error:error]) {
-        [fm removeItemAtPath:staging error:nil];
-        return NO;
-    }
-    if (![fm removeItemAtPath:target error:error] || ![fm copyItemAtURL:stagingURL toURL:targetURL error:error]) {
-        NSError *restoreError = nil;
-        [fm removeItemAtPath:target error:nil];
-        BOOL restored = [fm copyItemAtPath:backup toPath:target error:&restoreError];
-        [fm removeItemAtPath:staging error:nil];
-        if (error) *error = restoreError ?: *error;
-        [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Update: replacement failed; backup restored=%d", restored]];
-        return NO;
-    }
-    [fm removeItemAtPath:staging error:nil];
-    [[LCOSLogManager sharedManager] forceLog:@"LCOS Update: installed LCOS.dylib; previous version backed up"];
-    return YES;
-}
 
 - (void)finishInstall:(void (^)(NSError *))completion error:(NSError *)error {
     if (!completion) return;

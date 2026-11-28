@@ -51,6 +51,7 @@
 }
 
 - (void)cancelDockPreparation {
+    self.launcherDismissActive = NO;
     self.dockPreparingLauncher = NO;
     self.dockEndedWhilePreparing = NO;
     self.dockTransitionActive = NO;

@@ -2,6 +2,5 @@
 
 #import <UIKit/UIKit.h>
 
-@interface LCOSSettingsView : UIViewController
-
+@interface LCOSSettingsView : UITableViewController
 @end

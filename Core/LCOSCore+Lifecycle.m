@@ -197,6 +197,8 @@
 }
 
 - (void)finishHidingLauncher {
+        self.launcherDismissActive = NO;
+        [NSNotificationCenter.defaultCenter postNotificationName:@"LCOSLauncherGestureActive" object:@NO];
         [self setLauncherRoundedCorners:NO];
         self.launcherContainer.view.transform = CGAffineTransformIdentity;
         [self.launcherView willMoveToParentViewController:nil];

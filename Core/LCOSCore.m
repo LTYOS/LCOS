@@ -271,7 +271,9 @@ static BOOL LCOSAutoRestoreEnabled(void) {
 - (void)showSettings {
     Class settingsClass = NSClassFromString(@"LCOSSettingsView");
     if (!settingsClass || self.overlayWindow.rootViewController.presentedViewController) return;
-    [self.overlayWindow.rootViewController presentViewController:[[settingsClass alloc] init] animated:YES completion:nil];
+    UIViewController *settings = [[settingsClass alloc] init];
+    UINavigationController *navigation = [[UINavigationController alloc] initWithRootViewController:settings];
+    [self.overlayWindow.rootViewController presentViewController:navigation animated:YES completion:nil];
 }
 
 
