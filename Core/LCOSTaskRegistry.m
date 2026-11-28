@@ -1,5 +1,6 @@
 #import "LCOSTaskRegistry+Private.h"
 #import "LCOSLogManager.h"
+#import "LCOSLaunchBridge.h"
 #import <objc/runtime.h>
 #import <objc/message.h>
 
@@ -82,31 +83,10 @@ static void LCOSAddRunningApp(id self, SEL _cmd, NSString *name, NSString *uuid,
     [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Task: host callback %@", view.class]];
     Class core = NSClassFromString(@"LCOSCore");
     id shared = ((id (*)(id, SEL))objc_msgSend)(core, @selector(sharedInstance));
-    BOOL fromLCOS = [NSUserDefaults.standardUserDefaults boolForKey:@"LCOSLaunchFromDesktop"] ||
-        [NSUserDefaults.standardUserDefaults boolForKey:@"LCOSLauncherVisible"];
-    NSString *sharedSource = nil;
-    Class sharedUtils = NSClassFromString(@"LCSharedUtils");
-    SEL groupSelector = NSSelectorFromString(@"appGroupPath");
-    if ([sharedUtils respondsToSelector:groupSelector]) {
-        @try {
-            id group = ((id (*)(id, SEL))objc_msgSend)(sharedUtils, groupSelector);
-            NSString *groupPath = [group isKindOfClass:NSURL.class] ? [group path] : [group isKindOfClass:NSString.class] ? group : nil;
-            if (groupPath.length) {
-                NSString *path = [groupPath stringByAppendingPathComponent:@"LiveContainer/LCOSLaunchSource.plist"];
-                NSDictionary *source = [NSDictionary dictionaryWithContentsOfFile:path];
-                sharedSource = [source isKindOfClass:NSDictionary.class] && [source[@"source"] isKindOfClass:NSString.class] ? source[@"source"] : nil;
-                if (sharedSource) {
-                    fromLCOS = [sharedSource isEqualToString:@"lcos"];
-                    // This source belongs only to this host task callback.
-                    [NSFileManager.defaultManager removeItemAtPath:path error:nil];
-                }
-            }
-        } @catch (NSException *exception) {
-            [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Task: shared launch source unavailable %@", exception.name]];
-        }
-    }
+    BOOL sharedSource = LCOSConsumeLaunchSource(uuid).boolValue;
+    BOOL fromLCOS = sharedSource || [NSUserDefaults.standardUserDefaults boolForKey:@"LCOSLaunchFromDesktop"];
     if (fromLCOS) [NSUserDefaults.standardUserDefaults removeObjectForKey:@"LCOSLaunchFromDesktop"];
-    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Task: launch source=%@ shared=%@", fromLCOS ? @"LCOSShell" : @"NativeShell", sharedSource ?: @"none"]];
+    [[LCOSLogManager sharedManager] forceLog:[NSString stringWithFormat:@"LCOS Task: launch source=%@ shared=%@", fromLCOS ? @"LCOSShell" : @"NativeShell", sharedSource ? @"lcos" : @"none"]];
     [[LCOSTaskRegistry shared] registerTask:view fromLCOS:fromLCOS];
 }
 
@@ -236,6 +216,7 @@ static void LCOSAppDidExit(id self, SEL _cmd, id scene) {
         [self presentTaskWhenReady:view fromLCOS:fromLCOS attempt:attempt + 1];
     });
 }
+
 
 
 
